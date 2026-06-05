@@ -32,11 +32,11 @@ column and its source (NCU vs spec sheet).
 ```bash
 # all rows
 python MLP_NN/v1.5/predict_v15.py \
-    --kernel-stats MLP_NN/examples/kernel_stats_example.csv --out pred.csv --log run.log
+    --kernel-stats MLP_NN/examples/example_input.csv --out pred.csv --log run.log
 
 # one row of the CSV
 python MLP_NN/v1.5/predict_v15.py \
-    --kernel-stats MLP_NN/examples/kernel_stats_example.csv --row 3 --out row3.csv
+    --kernel-stats MLP_NN/examples/example_input.csv --row 3 --out row3.csv
 ```
 `src_gpu` / `tgt_gpu` are columns in the input CSV (per-row).
 
@@ -56,7 +56,7 @@ MLP_NN/v1.5/                THE DELIVERABLE
   README.md  INPUT_SCHEMA.csv
 MLP_NN/examples/
   prepare_data.py           build the example CSV from raw NCU + spec sheet
-  kernel_stats_example.csv  20-row example (ALL input columns)
+  example_input.csv  20-row example (ALL input columns)
 ```
 At runtime the deliverable reads only the input CSV. (Rebuilding the example with
 `prepare_data.py` additionally uses the project pipeline + raw NCU data.)

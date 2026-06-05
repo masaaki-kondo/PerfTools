@@ -4,22 +4,20 @@ Predicts a kernel's metrics on a TARGET GPU from its NCU profile measured on a
 SOURCE GPU.  Fully offline.  Depends only on numpy / pandas / torch + v15_core.
 
 INPUTS
-  kernel stats (NCU, source GPU) — either a batch CSV (--kernel-stats) or a
-  single kernel via --set "Col=Val".  GPU specs come from the input row's spec
-  columns if present (the example carries them), else from the static spec file
-  (data/gpu_specs.csv) looked up by --src / --tgt (or per-row src_gpu/tgt_gpu).
+  One CSV (--kernel-stats) — EVERY input is in it, one row per kernel:
+    - NCU columns (kernel profile on the source GPU), and
+    - GPU spec columns "SRC <spec>" / "TGT <spec>" + "TGT peak_*".
+  Build it from raw NCU + the spec sheet with MLP_NN/examples/prepare_data.py.
 
 OUTPUT
   --out pred.csv   estimated metrics (+ roofline quantities) per kernel.
   --log run.log    plain-text run summary (also to stderr).
 
 EXAMPLES
-  python MLP_NN/v1.5/predict_v15.py --kernel-stats MLP_NN/examples/kernel_stats_example.csv \
+  python MLP_NN/v1.5/predict_v15.py --kernel-stats MLP_NN/examples/example_input.csv \
          --out pred.csv --log run.log
-  python MLP_NN/v1.5/predict_v15.py --kernel-stats MLP_NN/examples/kernel_stats_example.csv \
+  python MLP_NN/v1.5/predict_v15.py --kernel-stats MLP_NN/examples/example_input.csv \
          --row 3 --out row3.csv
-  python MLP_NN/v1.5/predict_v15.py --src A100 --tgt GB200 --out one.csv \
-         --set "Block Size=256" --set "Execution Time=5000" ...
 """
 import os, sys, csv, json, pickle, argparse, datetime
 HERE = os.path.dirname(os.path.abspath(__file__))

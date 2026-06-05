@@ -12,7 +12,7 @@ spec sheet) to compute the per-GPU specs exactly as the model was trained on.
 
 USAGE (from repo root, with raw NCU data present in data/)
   python MLP_NN/examples/prepare_data.py --raw data/20260522_wide.zip --src A100 \
-         --n 20 --out MLP_NN/examples/kernel_stats_example.csv
+         --n 20 --out MLP_NN/examples/example_input.csv
 """
 import os, sys, argparse
 HERE = os.path.dirname(os.path.abspath(__file__))
