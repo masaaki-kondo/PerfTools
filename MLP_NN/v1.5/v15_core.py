@@ -60,7 +60,7 @@ class MultiBranchMLP(nn.Module):
 
 
 # --------------------------------------------------------------------------- #
-# feature schemas (verbatim from MLP_NN/data_pipeline_v2.py)                   #
+# input column lists (verbatim from MLP_NN/data_pipeline_v2.py)                #
 # --------------------------------------------------------------------------- #
 KERNEL_CONFIG_FEATURES = [
     "Block Size", "Grid Size", "Threads", "Registers Per Thread [register/thread]",

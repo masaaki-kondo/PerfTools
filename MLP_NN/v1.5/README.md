@@ -71,7 +71,7 @@ from the spec sheet (`data/gpu_microarch_specs.csv`). **Note:** the raw NCU expo
 the wide zip there first. The shipped `example_input_mixed-src_20kernels.csv` was
 built this way.
 
-## Input schema
+## Input columns (what each row needs)
 
 NCU columns are measured on the **source** GPU; spec columns come from the **spec
 sheet** (`data/gpu_microarch_specs.csv`). 79 columns total per row.
