@@ -1,0 +1,7 @@
+v1.5 cross-GPU estimator  run @ 2026-06-05T20:07:39
+model    : v1.5 (MLP + roofline input features), PER-SOURCE, BRK_W=1.0
+specs    : /hs/work0/home/users/yuan.he.uw/workspace/Perf_Tools_dev/MLP_NN/v1.5/specs.csv  (GPUs: ['a100', 'gb200', 'h100'])
+mode     : batch
+kernels  : 20   src->tgt: A100->H100, A100->GB200, A100->H100, A100->GB200 ...
+mean predicted ExecTime: 5010785.6 ns
+output   : MLP_NN/examples/pred_example.csv

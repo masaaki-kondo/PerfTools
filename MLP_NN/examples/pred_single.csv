@@ -1,0 +1,11 @@
+# v1.5 cross-GPU kernel estimator — output
+# INPUT SOURCES:
+#   kernel stats  : measured by NCU on the SOURCE GPU (user-supplied, per kernel)
+#   GPU specs     : static specs.csv, looked up by --src / --tgt GPU name
+#   roofline terms: COMPUTED in-tool (bytes=MemThr[byte/s]*ExecTime;
+#                   flops=(2*FFMA+FADD+FMUL)*cycles; t_roof=max(bytes/BW,flops/peak))
+# OUTPUT COLUMNS  : kernel_name/src_gpu/tgt_gpu = identifiers;
+#   Execution Time [ns], Memory Throughput [%], Achieved Occupancy, brk_* = v1.5 predictions;
+#   t_mem/t_comp/t_roof_ns, efficiency_eta(=t_roof/ExecTime) = roofline quantities.
+kernel_name,src_gpu,tgt_gpu,Execution Time [ns],Memory Throughput [%],Achieved Occupancy,brk_memory,brk_pipeline_contention,brk_sync,brk_scheduling_overhead,t_mem_ns,t_comp_ns,t_roof_ns,efficiency_eta
+,A100,H100,250000,5.71989e+08,-1.95954e+09,1.0,0.0,0.0,0.0,1194.03,0,1194.03,0.00477612

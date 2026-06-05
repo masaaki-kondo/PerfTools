@@ -1,0 +1,25 @@
+spec,unit,A100,H100,GB200,GB10,confidence_notes,source
+architecture,,Ampere GA100,Hopper GH100,Blackwell B200 (datacenter),Grace-Blackwell GB10 (DGX Spark),,
+compute_capability,,8.0,9.0,10.0,12.1,datasheet,NVIDIA
+num_sms,count,108,132,148,48,datasheet (GB200~148; GB10 48 measured),NVIDIA / chipsandcheese GB10
+memory_type,,HBM2e,HBM3,HBM3e,LPDDR5X-8533,datasheet,NVIDIA
+dram_bandwidth,GB/s,2039,3350,8000,273,datasheet (A100=SXM4-80GB nvidia-smi-confirmed 2.0TB/s; H100=SXM 3.35TB/s),NVIDIA / DGX Spark
+cpu_gpu_interconnect,,PCIe 4.0 x16,PCIe 5.0 x16,NVLink-C2C,NVLink-C2C,"A100/H100 discrete host-device bus (explicit copy); GB200/GB10 Grace-integrated coherent (no copy)",NVIDIA
+cpu_gpu_bandwidth,GB/s,64,128,900,600,"PCIe aggregate bidir (Gen4=64; Gen5=128); NVLink-C2C aggregate; GB10 effective CPU-GPU = shared LPDDR5X 273 (unified mem)",NVIDIA / chiplog.io GB10
+sm_clock_boost,GHz,1.41,1.755,1.965,2.55,datasheet (H100=H800 proxy); GB10 measured,arXiv2402.13499 T3 / TechPowerUp / chipsandcheese
+l1_shmem_combined_per_sm,KB,192,256,256,128,datasheet (GB10 measured),NVIDIA whitepapers / chipsandcheese GB10
+l2_cache_total,MB,40,50,126,24,datasheet (GB10=GPU L2; +16MB SLC),NVIDIA / chipsandcheese
+shmem_per_sm_max,KB,164,228,228,99,datasheet (GB10 estimated from consumer Blackwell),NVIDIA / estimated
+l1_latency,cycles,37.9,40.7,39,33,measured (GB10 est ~13ns@2.55GHz),arXiv2402.13499 T4 / chipsandcheese
+l1_latency,ns,26.9,23.2,19.6,13,measured (derived where needed),arXiv2402.13499 / chipsandcheese
+l2_latency,cycles,261.5,263.0,300,,measured (GB200 near-partition est; GB10 none),arXiv2402.13499 T4 / chipsandcheese B200
+l2_latency,ns,185,150,150,,measured (GB200 near-partition; GB10 none),arXiv2402.13499 / chipsandcheese
+dram_latency_paper,cycles,466.3,478.8,,,measured A100/H100; GB200/GB10 none,arXiv2402.13499 T4
+dram_latency_paper,ns,331,273,,,"measured at boost clock; downclocked runs higher",arXiv2402.13499 (derived)
+dram_latency_measured,ns,392,375,,,your pointer-chase (xlsx); GB10/GB200 not in sheet,Latency_100925.xlsx
+dram_latency_model_recommended,ns,395,370,440,210,"A100/H100 from measurement; GB200 est (>H100/A100, dual-die); GB10 LPDDR5X analog",synthesis (see caveats)
+fma_dependent_latency,cycles,4,4,4,4,"established Volta+ FP32 pipe depth; Blackwell confirmed via GB203",Citadel Jia / arXiv2507.10789
+int32_dependent_latency,cycles,,,4,4,measured (GB203 Blackwell proxy),arXiv2507.10789
+peak_fp32,TFLOPS,19.5,67,80,31,"dense non-tensor FP32 peak; A100/H100 datasheet; GB200 est (per-GPU); GB10 est (consumer Blackwell)",NVIDIA datasheets (A100/H100) / Blackwell announcement (GB200) / estimate (GB10)
+peak_fp64,TFLOPS,9.7,34,40,0.46,"dense non-tensor FP64 peak; A100/H100 NVIDIA datasheet (H100=34 official; TechPowerUp calc 33.5); GB200 est; GB10 no official spec (TechPowerUp 0.46=1:64 FP32, est)",NVIDIA datasheets (A100/H100) / Blackwell announcement (GB200) / TechPowerUp (GB10 1:64)
+peak_fp16_tensor,TFLOPS,312,989,2250,213,"FP16 tensor-core peak, DENSE (no 2:4 sparsity); A100/H100=SXM datasheet; GB200 per-GPU est; GB10 measured (mmapeak, not official)",NVIDIA datasheets (A100/H100) / Blackwell announcement (GB200) / NVIDIA Dev Forum mmapeak (GB10)
