@@ -1,5 +1,5 @@
 {
-  "model": "v1.5 (MLP + roofline input features), PER-SOURCE, BRK_W=1.0",
+  "model": "v1.5 (MLP + roofline input features), PER-SOURCE, BRK_W=1.0 (stability: NaN-input impute + ratio cap + grad clip)",
   "sources": [
     "a100",
     "gb200",
