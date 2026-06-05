@@ -1,6 +1,0 @@
-# v1.5 cross-GPU kernel estimator — output
-# INPUT SOURCES: kernel stats = NCU on the SOURCE GPU; GPU specs = spec sheet (data/);
-#   roofline terms COMPUTED in-tool (bytes=MemThr[byte/s]*ExecTime; flops=(2*FFMA+FADD+FMUL)*cycles).
-# OUTPUTS: ExecTime/Mem%/Occupancy/brk_* = v1.5 predictions; t_*_ns + efficiency_eta = roofline.
-kernel_name,src_gpu,tgt_gpu,Execution Time [ns],Memory Throughput [%],Achieved Occupancy,brk_memory,brk_pipeline_contention,brk_sync,brk_scheduling_overhead,t_mem_ns,t_comp_ns,t_roof_ns,efficiency_eta
-"void adam<float, float>(T1 *, T1 *, T1 *, const T2 *, float, float, float, float, float, int, unsigned long, adamMode_t, float)",A100,H100,2.29579e+06,7.07753,72.5063,0.19561389,0.34002447,0.00068480754,0.46367675,120345,776173,776173,0.338085

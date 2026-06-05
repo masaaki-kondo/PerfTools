@@ -18,7 +18,7 @@ needs — nothing else is read at runtime:
   - the GPU spec columns `SRC <spec>` / `TGT <spec>` + `TGT peak_*`.
 
 That CSV is built from the raw NCU export + the spec sheet by
-`MLP_NN/examples/prepare_example.py` (see below). `INPUT_SCHEMA.csv` lists every
+`MLP_NN/examples/prepare_data.py` (see below). `INPUT_SCHEMA.csv` lists every
 column and its source (NCU vs spec sheet).
 
 ## Outputs
@@ -55,15 +55,15 @@ MLP_NN/v1.5/                THE DELIVERABLE
   v15_artifact/             pre-trained per-source weights (a100/h100/gb200)
   README.md  INPUT_SCHEMA.csv
 MLP_NN/examples/
-  prepare_example.py        build the example CSV from raw NCU + spec sheet
+  prepare_data.py           build the example CSV from raw NCU + spec sheet
   kernel_stats_example.csv  20-row example (ALL input columns)
-  pred_example.csv ...      example outputs
 ```
 At runtime the deliverable reads only the input CSV. (Rebuilding the example with
-`prepare_example.py` additionally uses the project pipeline + raw NCU data.)
+`prepare_data.py` additionally uses the project pipeline + raw NCU data.)
 
 ## Known GPUs
-`A100`, `H100`, `GB200` (rows in `data/gpu_specs.csv`). Add a generation by adding a row.
+`A100`, `H100`, `GB200` (columns in the spec sheet `data/gpu_microarch_specs.csv`).
+Add a generation by adding it to the spec sheet and rebuilding the example CSV.
 
 ## Notes
 v1.5 is the in-range estimator (existing GPUs); accuracy is preliminary.

@@ -1,7 +1,0 @@
-v1.5 cross-GPU estimator  run @ 2026-06-05T21:18:37
-model    : v1.5 (MLP + roofline input features), PER-SOURCE, BRK_W=1.0
-specs    : read from the input CSV (SRC/TGT columns)
-mode     : batch
-kernels  : 20   src->tgt: A100->H100, A100->GB200, A100->H100, A100->GB200 ...
-mean predicted ExecTime: 5010785.6 ns
-output   : MLP_NN/examples/pred_example.csv

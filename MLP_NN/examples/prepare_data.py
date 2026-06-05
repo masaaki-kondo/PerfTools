@@ -11,7 +11,7 @@ This is a dev/build tool: it uses the project's data pipeline (which merges the
 spec sheet) to compute the per-GPU specs exactly as the model was trained on.
 
 USAGE (from repo root, with raw NCU data present in data/)
-  python MLP_NN/examples/prepare_example.py --raw data/20260522_wide.zip --src A100 \
+  python MLP_NN/examples/prepare_data.py --raw data/20260522_wide.zip --src A100 \
          --n 20 --out MLP_NN/examples/kernel_stats_example.csv
 """
 import os, sys, argparse
@@ -26,7 +26,7 @@ try:
     from MLP_NN.data_pipeline_v2 import (
         extract_gpu_data, GPU_SPEC_FEATURES, GPU_PEAK_SPECS, GPU_HW_FALLBACK)
 except ImportError:
-    sys.exit("prepare_example needs the project data pipeline (MLP_NN/data_pipeline_v2.py) "
+    sys.exit("prepare_data needs the project data pipeline (MLP_NN/data_pipeline_v2.py) "
              "and the raw NCU data in data/ — neither is part of the shipped deliverable.")
 
 FP_COUNTERS = [
