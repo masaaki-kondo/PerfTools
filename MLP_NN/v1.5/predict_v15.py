@@ -30,9 +30,8 @@ import torch
 import v15_core as core
 
 ROOT = os.path.dirname(os.path.dirname(HERE))            # repo root
-SPEC_FILE = os.path.join(ROOT, "data", "gpu_specs.csv")
 SPEC = core.GPU_SPEC_FEATURES
-SRC_PFX, TGT_PFX = "SRC ", "TGT "                        # spec columns in all-column CSVs
+SRC_PFX, TGT_PFX = "SRC ", "TGT "                        # spec columns (every input is IN the CSV)
 OUT_COLS = ["Execution Time [ns]", "Memory Throughput [%]", "Achieved Occupancy",
             "brk_memory", "brk_pipeline_contention", "brk_sync",
             "brk_scheduling_overhead", "t_mem_ns", "t_comp_ns", "t_roof_ns", "efficiency_eta"]
@@ -49,27 +48,16 @@ def load_source_model(art, src):
     return m, stats, ck
 
 
-def load_spec_file(path):
-    specs = {}
-    with open(path) as f:
-        for row in csv.DictReader(f):
-            g = row["gpu"].strip().lower()
-            specs[g] = {"vec": np.array([float(row[c]) for c in SPEC]),
-                        "peak_fp32": float(row["peak_fp32"]), "peak_fp64": float(row["peak_fp64"]),
-                        "dram_bw": float(row["dram_bw"])}
-    return specs
-
-
-def resolve_specs(row, src_gpu, tgt_gpu, spec_file):
-    """Specs from the row's spec columns (all-column CSV) if present, else the spec file."""
-    if (SRC_PFX + SPEC[0]) in row and row.get(SRC_PFX + SPEC[0]) == row.get(SRC_PFX + SPEC[0]):
-        src_vec = np.array([float(row[SRC_PFX + c]) for c in SPEC])
-        tgt_vec = np.array([float(row[TGT_PFX + c]) for c in SPEC])
-        peaks = {"peak_fp32": float(row[TGT_PFX + "peak_fp32"]),
-                 "peak_fp64": float(row[TGT_PFX + "peak_fp64"]), "dram_bw": float(row[TGT_PFX + "dram_bw"])}
-        return src_vec, tgt_vec, peaks
-    s, t = src_gpu.lower(), tgt_gpu.lower()
-    return spec_file[s]["vec"], spec_file[t]["vec"], spec_file[t]
+def resolve_specs(row):
+    """Every input is IN the CSV row — read the GPU spec columns directly.
+    Returns None if the spec columns are missing (so the caller can error)."""
+    if (SRC_PFX + SPEC[0]) not in row or row.get(SRC_PFX + SPEC[0]) != row.get(SRC_PFX + SPEC[0]):
+        return None
+    src_vec = np.array([float(row[SRC_PFX + c]) for c in SPEC])
+    tgt_vec = np.array([float(row[TGT_PFX + c]) for c in SPEC])
+    peaks = {"peak_fp32": float(row[TGT_PFX + "peak_fp32"]),
+             "peak_fp64": float(row[TGT_PFX + "peak_fp64"]), "dram_bw": float(row[TGT_PFX + "dram_bw"])}
+    return src_vec, tgt_vec, peaks
 
 
 def build_sample(srow, src_gpu, tgt_gpu, src_vec, tgt_vec, peaks, reg_out, brk_out):
@@ -132,7 +120,6 @@ PROVENANCE = [
 
 def main():
     ap = argparse.ArgumentParser(description="v1.5 cross-GPU kernel estimator")
-    ap.add_argument("--specs", default=SPEC_FILE)
     ap.add_argument("--artifact", default=f"{HERE}/v15_artifact")
     ap.add_argument("--kernel-stats", help="batch mode: CSV of source-GPU kernel stats")
     ap.add_argument("--row", type=int, help="batch mode: predict only this 1-based data row")
@@ -143,7 +130,6 @@ def main():
     args = ap.parse_args()
 
     meta = json.load(open(f"{args.artifact}/meta.json"))
-    spec_file = load_spec_file(args.specs)
     reg_out, brk_out, known = meta["reg_out"], meta["brk_out"], set(meta["sources"])
     cache = {}
 
@@ -190,7 +176,12 @@ def main():
         sub = []
         for i in idxs:
             row, sg, tg = rows_in[i]
-            sv, tv, pk = resolve_specs(row, sg, tg, spec_file)
+            spec = resolve_specs(row)
+            if spec is None:
+                ap.error("input is missing the GPU spec columns (SRC ... / TGT ...). "
+                         "Every input must be in the CSV — build it with "
+                         "MLP_NN/examples/prepare_example.py.")
+            sv, tv, pk = spec
             sub.append(build_sample(row, sg, tg, sv, tv, pk, reg_out, brk_out))
         for i, r in zip(idxs, to_rows(core.predict(model, stats, sub), sub)):
             out_rows[i] = r
@@ -204,7 +195,7 @@ def main():
             w.writerow({c: (f"{r[c]:.6g}" if isinstance(r[c], float) else r[c]) for c in cols})
 
     log = [f"v1.5 cross-GPU estimator  run @ {datetime.datetime.now().isoformat(timespec='seconds')}",
-           f"model    : {meta['model']}", f"specs    : {args.specs}  (GPUs: {sorted(spec_file)})",
+           f"model    : {meta['model']}", "specs    : read from the input CSV (SRC/TGT columns)",
            f"mode     : {'batch' if args.kernel_stats else 'single'}" + (f", row {args.row}" if args.row else ""),
            f"kernels  : {len(rows_in)}   src->tgt: "
            + ", ".join(f"{sg}->{tg}" for _, sg, tg in rows_in[:4]) + (" ..." if len(rows_in) > 4 else ""),

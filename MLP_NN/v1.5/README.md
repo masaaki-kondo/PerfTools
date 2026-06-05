@@ -12,13 +12,14 @@ Python 3.11, single CLI. Libraries: `numpy`, `pandas`, `torch` (CPU is fine).
 None. Any machine with Python 3.11 + numpy/pandas/torch. No GPU, no network, no DB.
 
 ## Inputs
-1. **Kernel stats** — NCU profile of the kernel on the *source* GPU: a batch CSV
-   (`--kernel-stats`) or a single kernel via `--set "Col=Val"`.
-2. **GPU specs** — from the spec sheet (`data/gpu_specs.csv`), selected by
-   `--src` / `--tgt` GPU name. The shipped example CSV also carries the spec
-   columns inline (`SRC <spec>` / `TGT <spec>`), so each row is self-describing.
+**Everything is in one input CSV.** Each row carries every input the estimator
+needs — nothing else is read at runtime:
+  - NCU columns (kernel profile on the *source* GPU), and
+  - the GPU spec columns `SRC <spec>` / `TGT <spec>` + `TGT peak_*`.
 
-`INPUT_SCHEMA.csv` lists every input column and its source (NCU vs spec sheet).
+That CSV is built from the raw NCU export + the spec sheet by
+`MLP_NN/examples/prepare_example.py` (see below). `INPUT_SCHEMA.csv` lists every
+column and its source (NCU vs spec sheet).
 
 ## Outputs
 - **`--out pred.csv`** — per kernel: `Execution Time [ns]`, `Memory Throughput [%]`,
@@ -29,19 +30,15 @@ None. Any machine with Python 3.11 + numpy/pandas/torch. No GPU, no network, no 
 
 ## Command line
 ```bash
-# batch
+# all rows
 python MLP_NN/v1.5/predict_v15.py \
     --kernel-stats MLP_NN/examples/kernel_stats_example.csv --out pred.csv --log run.log
 
-# one row of a CSV
+# one row of the CSV
 python MLP_NN/v1.5/predict_v15.py \
     --kernel-stats MLP_NN/examples/kernel_stats_example.csv --row 3 --out row3.csv
-
-# single kernel via flags (specs looked up by --src/--tgt)
-python MLP_NN/v1.5/predict_v15.py --src A100 --tgt GB200 --out one.csv \
-    --set "Block Size=256" --set "Execution Time=5000" ...
 ```
-`src_gpu` / `tgt_gpu` may instead be columns in the input CSV (per-row).
+`src_gpu` / `tgt_gpu` are columns in the input CSV (per-row).
 
 ## Dependencies / network / DB
 Python 3.11 + `numpy`, `pandas`, `torch`. Nothing else. Fully offline.
@@ -51,19 +48,19 @@ Run from the repo root. Self-contained:
 ```
 data/
   gpu_microarch_specs.csv   spec sheet (raw)
-  gpu_specs.csv             per-GPU specs used by the tool
   (raw NCU data is large and NOT shipped — place here to regenerate examples)
 MLP_NN/v1.5/                THE DELIVERABLE
-  predict_v15.py            CLI
+  predict_v15.py            CLI (reads everything from the input CSV)
   v15_core.py               model + feature construction (no other deps)
   v15_artifact/             pre-trained per-source weights (a100/h100/gb200)
   README.md  INPUT_SCHEMA.csv
 MLP_NN/examples/
-  prepare_example.py        rebuild the example CSV from raw NCU + spec sheet
-  kernel_stats_example.csv  20-row example (all columns)
+  prepare_example.py        build the example CSV from raw NCU + spec sheet
+  kernel_stats_example.csv  20-row example (ALL input columns)
   pred_example.csv ...      example outputs
 ```
-The deliverable depends on nothing else in the repo.
+At runtime the deliverable reads only the input CSV. (Rebuilding the example with
+`prepare_example.py` additionally uses the project pipeline + raw NCU data.)
 
 ## Known GPUs
 `A100`, `H100`, `GB200` (rows in `data/gpu_specs.csv`). Add a generation by adding a row.
