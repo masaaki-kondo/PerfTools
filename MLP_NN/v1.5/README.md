@@ -1,13 +1,20 @@
 # Cross-GPU CUDA Kernel Performance Estimator (v1.5)
 
-Predicts how a CUDA kernel will perform on a **target** GPU from its Nsight
-Compute (NCU) profile measured on a **source** GPU. A pre-trained, per-source
-neural-network model (v1.5 = multi-branch MLP + roofline-derived input
-features). Fully offline; depends only on `numpy`, `pandas`, `torch`.
+Predict how a CUDA kernel will perform on a **target** GPU from its Nsight Compute
+(NCU) profile measured on a **source** GPU. A pre-trained, per-source
+neural-network model (v1.5 = multi-branch MLP + roofline-derived input features).
 
-Supported GPUs: **A100, H100, GB200** (any pair, source → target).
+- **Supported GPUs:** A100, H100, GB200 (any pair, source → target)
+- **Dependencies:** Python 3.11 + `numpy`, `pandas`, `torch` (CPU is fine)
+- **Offline:** no GPU, no network, no database; runs from the repo root
 
----
+## Quick start
+
+```bash
+python MLP_NN/v1.5/predict_v15.py \
+    --csv MLP_NN/examples/example_input_mixed-src_20kernels.csv \
+    --row all --out pred.csv --log run.log
+```
 
 ## What it predicts (per kernel)
 
@@ -19,8 +26,11 @@ Supported GPUs: **A100, H100, GB200** (any pair, source → target).
 | `brk_memory`, `brk_pipeline_contention`, `brk_sync`, `brk_scheduling_overhead` | stall-time breakdown (4 fractions, sum to 1) |
 | `t_mem_ns`, `t_comp_ns`, `t_roof_ns`, `efficiency_eta` | roofline quantities (`t_roof`=max(mem,compute); `eta`=`t_roof`/ExecTime) |
 
-v1.5 is the **in-range** estimator (existing GPUs); accuracy is preliminary.
-Targets far beyond the training GPUs are extrapolation and less reliable.
+**Accuracy:** on 5-fold (group-by-kernel) cross-validation, Execution Time
+reaches **R² ≈ 0.99, ~7% MAPE**. v1.5 is the **in-range** estimator (existing
+GPUs); targets far beyond the training GPUs are extrapolation and less reliable.
+`Memory Throughput [%]` is an unclamped regression output and can fall slightly
+outside [0, 100] (read as ≈0 / ≈100).
 
 ## Two ways to run
 
@@ -31,29 +41,27 @@ python MLP_NN/v1.5/predict_v15.py --out pred.csv \
     --block-size 256 --grid-size 4096 --execution-time 5000 ... \
     --src-dram-bw-per-sm-byte-s-sm 1.8e10 --tgt-peak-fp32 6.7e13 ...
 ```
-Run `predict_v15.py --help` to see the flag for every input column.
+Run `predict_v15.py --help` to list the flag for every input column.
 
 **Mode 2 — CSV + `--row`** (one or many kernels). `--row` is **required**: a
 1-based data row, or `all` for every row (the header is metadata):
 ```bash
 # every kernel in the CSV
-python MLP_NN/v1.5/predict_v15.py \
-    --csv MLP_NN/examples/example_input_mixed-src_20kernels.csv --row all --out pred.csv --log run.log
+python MLP_NN/v1.5/predict_v15.py --csv input.csv --row all --out pred.csv --log run.log
 
 # just one row
-python MLP_NN/v1.5/predict_v15.py \
-    --csv MLP_NN/examples/example_input_mixed-src_20kernels.csv --row 3 --out row3.csv
+python MLP_NN/v1.5/predict_v15.py --csv input.csv --row 3 --out row3.csv
 ```
 Build such a CSV from a raw NCU export + the spec sheet with
 `MLP_NN/examples/prepare_data.py`.
 
 In both modes the estimator reads **only the inputs you give it** — every input
-below must be present (no hidden lookups).
+column below must be present (no hidden lookups).
 
 ## Input schema
 
-Each kernel needs all of the following. NCU columns are measured on the **source**
-GPU; spec columns come from the **spec sheet** (`data/gpu_microarch_specs.csv`).
+NCU columns are measured on the **source** GPU; spec columns come from the **spec
+sheet** (`data/gpu_microarch_specs.csv`). 79 columns total per row.
 
 | column(s) | source | role |
 |---|---|---|
@@ -77,17 +85,17 @@ The 13 GPU spec features (`<spec>`, used with `SRC `/`TGT ` prefixes):
 The roofline terms (`bytes`, FLOPs, `t_mem`, `t_comp`, `t_roof`) are **computed
 in-tool** from the columns above — not supplied.
 
-## Outputs
+## Output
 
-- `--out pred.csv` — one row per kernel with the predictions + roofline columns.
-  A leading `#` comment block documents each column's source
-  (`--no-comments` for a plain CSV).
-- `--log run.log` — plain-text run summary (also to stderr).
+`--out pred.csv` — one row per kernel; a leading `#` comment block documents each
+column's source (`--no-comments` for a plain CSV). `--log run.log` — a plain-text
+run summary (also printed to stderr). Example:
 
-## Environment
-
-Python 3.11 + `numpy`, `pandas`, `torch` (CPU is fine). No GPU, no network, no
-database. Fully offline. Run from the repo root.
+```
+kernel_name,src_gpu,tgt_gpu,Execution Time [ns],Memory Throughput [%],Achieved Occupancy,brk_memory,...,efficiency_eta
+adam,A100,H100,203149,5.5,68.1,0.41,...,0.312
+calculateForce,H100,GB200,1413460,39.4,66.2,0.55,...,0.247
+```
 
 ## Files
 
@@ -98,12 +106,13 @@ MLP_NN/v1.5/
   v15_artifact/      pre-trained per-source weights (model_<gpu>.pt, stats, meta)
   README.md
 MLP_NN/examples/
-  prepare_data.py                     build an input CSV from raw NCU + the spec sheet
-  example_input_mixed-src_20kernels.csv    20-row example (all columns)
+  prepare_data.py                          build an input CSV from raw NCU + the spec sheet
+  example_input_mixed-src_20kernels.csv    20-row example (all columns, mixed sources)
 data/
-  gpu_microarch_specs.csv             the spec sheet
+  gpu_microarch_specs.csv                  the spec sheet
   (raw NCU data is large and NOT shipped — place here to rebuild examples)
 ```
 
-Rebuilding the example with `prepare_data.py` additionally needs the project data
-pipeline + the raw NCU data; the runtime estimator does not.
+The runtime estimator (`predict_v15.py` + `v15_core.py` + `v15_artifact/`) is
+self-contained. Rebuilding the example with `prepare_data.py` additionally needs
+the project data pipeline + the raw NCU data.
