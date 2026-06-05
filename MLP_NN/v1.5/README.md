@@ -52,11 +52,24 @@ python MLP_NN/v1.5/predict_v15.py --csv input.csv --row all --out pred.csv --log
 # just one row
 python MLP_NN/v1.5/predict_v15.py --csv input.csv --row 3 --out row3.csv
 ```
-Build such a CSV from a raw NCU export + the spec sheet with
-`MLP_NN/examples/prepare_data.py`.
-
 In both modes the estimator reads **only the inputs you give it** — every input
 column below must be present (no hidden lookups).
+
+### Building an input CSV
+
+`MLP_NN/examples/prepare_data.py` builds an all-columns CSV from a raw NCU export
++ the spec sheet. It is **self-contained** (numpy/pandas + the spec sheet only —
+no other project code), so it runs from this repo:
+
+```bash
+python MLP_NN/examples/prepare_data.py --raw data/<your_ncu_wide>.zip --n 20
+```
+
+It reads the NCU columns from the export and fills the `SRC `/`TGT ` spec columns
+from the spec sheet (`data/gpu_microarch_specs.csv`). **Note:** the raw NCU export
+(Yoshida-san's profiling data) is large and is **not included in `/data`** — place
+the wide zip there first. The shipped `example_input_mixed-src_20kernels.csv` was
+built this way.
 
 ## Input schema
 
