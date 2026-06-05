@@ -114,5 +114,6 @@ data/
 ```
 
 The runtime estimator (`predict_v15.py` + `v15_core.py` + `v15_artifact/`) is
-self-contained. Rebuilding the example with `prepare_data.py` additionally needs
-the project data pipeline + the raw NCU data.
+self-contained. `prepare_data.py` is also self-contained (numpy/pandas + the spec
+sheet), but needs **Yoshida-san's raw NCU export** — it is large and is **not
+included in `/data`**; place the wide zip there to (re)build an input CSV.
