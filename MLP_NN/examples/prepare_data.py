@@ -59,10 +59,13 @@ def main():
     ap.add_argument("--src", required=True)
     ap.add_argument("--tgt", help="target GPU (default: round-robin over the others)")
     ap.add_argument("--n", type=int, default=20)
-    ap.add_argument("--out", required=True)
+    ap.add_argument("--out", help="output CSV (default: a meaningful name in MLP_NN/examples/)")
     args = ap.parse_args()
     if not os.path.exists(args.raw):
         sys.exit(f"raw NCU data not found: {args.raw} (not shipped — place it in data/)")
+    if not args.out:                       # meaningful default: source GPU + size
+        suffix = f"_to_{args.tgt}" if args.tgt else ""   # else targets round-robin in-file
+        args.out = os.path.join(HERE, f"example_input_{args.src}{suffix}_{args.n}kernels.csv")
 
     full = {g: extract_gpu_data(args.raw, g.lower()) for g in ALL_GPUS}
     specs = {g: gpu_specs(full, g) for g in ALL_GPUS}

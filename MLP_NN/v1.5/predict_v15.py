@@ -14,12 +14,12 @@ OUTPUT
   --log run.log    plain-text run summary (also to stderr).
 
 EXAMPLES
-  python MLP_NN/v1.5/predict_v15.py --kernel-stats MLP_NN/examples/example_input.csv \
+  python MLP_NN/v1.5/predict_v15.py --kernel-stats MLP_NN/examples/example_input_A100_20kernels.csv \
          --out pred.csv --log run.log
-  python MLP_NN/v1.5/predict_v15.py --kernel-stats MLP_NN/examples/example_input.csv \
+  python MLP_NN/v1.5/predict_v15.py --kernel-stats MLP_NN/examples/example_input_A100_20kernels.csv \
          --row 3 --out row3.csv
 """
-import os, sys, csv, json, pickle, argparse, datetime
+import os, sys, csv, re, json, pickle, argparse, datetime
 HERE = os.path.dirname(os.path.abspath(__file__))
 sys.path.insert(0, HERE)
 import numpy as np
@@ -33,6 +33,25 @@ SRC_PFX, TGT_PFX = "SRC ", "TGT "                        # spec columns (every i
 OUT_COLS = ["Execution Time [ns]", "Memory Throughput [%]", "Achieved Occupancy",
             "brk_memory", "brk_pipeline_contention", "brk_sync",
             "brk_scheduling_overhead", "t_mem_ns", "t_comp_ns", "t_roof_ns", "efficiency_eta"]
+
+# ---- the full set of input columns (every input can be a CLI option) ----
+FP_COUNTERS = [
+    "Predicated-On FFMA Operations Per Cycle [inst]",
+    "Predicated-On FADD Thread Instructions Executed Per Cycle [inst/cycle]",
+    "Predicated-On FMUL Thread Instructions Executed Per Cycle [inst/cycle]",
+    "Predicated-On DFMA Operations Per Cycle [inst]",
+    "Predicated-On DADD Thread Instructions Executed Per Cycle [inst/cycle]",
+    "Predicated-On DMUL Thread Instructions Executed Per Cycle [inst/cycle]",
+    "Elapsed Cycles [cycle]"]
+NCU_COLS = (core.KERNEL_CONFIG_FEATURES + core.WORKLOAD_PROFILE_FEATURES
+            + core.STALL_FEATURES + ["Execution Time"] + FP_COUNTERS)
+SPEC_COLS = ([f"{SRC_PFX}{c}" for c in SPEC] + [f"{TGT_PFX}{c}" for c in SPEC]
+             + ["TGT peak_fp32", "TGT peak_fp64", "TGT dram_bw"])
+INPUT_COLS = ["src_gpu", "tgt_gpu"] + NCU_COLS + SPEC_COLS      # every input column
+
+_flag = lambda c: "--" + re.sub(r"[^a-z0-9]+", "-", c.lower()).strip("-")
+_dest = lambda c: re.sub(r"[^a-z0-9]+", "_", c.lower()).strip("_")
+DEST2COL = {_dest(c): c for c in INPUT_COLS}
 
 
 def load_source_model(art, src):
@@ -116,15 +135,29 @@ PROVENANCE = [
 ]
 
 
+def _to_num(v):
+    try:
+        return float(v)
+    except (TypeError, ValueError):
+        return v
+
+
 def main():
-    ap = argparse.ArgumentParser(description="v1.5 cross-GPU kernel estimator")
+    ap = argparse.ArgumentParser(
+        description="v1.5 cross-GPU kernel estimator. Two input modes: "
+                    "(1) full input via CLI options, or (2) --csv FILE [--row N].")
     ap.add_argument("--artifact", default=f"{HERE}/v15_artifact")
-    ap.add_argument("--kernel-stats", help="batch mode: CSV of source-GPU kernel stats")
-    ap.add_argument("--row", type=int, help="batch mode: predict only this 1-based data row")
-    ap.add_argument("--set", action="append", default=[], metavar="COL=VAL", help="single mode (repeatable)")
-    ap.add_argument("--src"); ap.add_argument("--tgt")
-    ap.add_argument("--out", required=True); ap.add_argument("--log")
+    ap.add_argument("--out", required=True)
+    ap.add_argument("--log")
     ap.add_argument("--no-comments", action="store_true")
+    # mode 2: CSV
+    m2 = ap.add_argument_group("Mode 2: CSV input")
+    m2.add_argument("--csv", "--kernel-stats", dest="csv", help="input CSV (all columns)")
+    m2.add_argument("--row", type=int, help="predict only this 1-based data row of the CSV")
+    # mode 1: every input column as its own CLI option
+    m1 = ap.add_argument_group("Mode 1: full input via CLI options (one prediction)")
+    for c in INPUT_COLS:
+        m1.add_argument(_flag(c), dest=_dest(c), metavar="V", help=c)
     args = ap.parse_args()
 
     meta = json.load(open(f"{args.artifact}/meta.json"))
@@ -137,31 +170,24 @@ def main():
             cache[s] = load_source_model(args.artifact, s)
         return cache[s]
 
-    if args.kernel_stats:
-        df = pd.read_csv(args.kernel_stats)
+    cli_given = {DEST2COL[d]: getattr(args, d) for d in DEST2COL if getattr(args, d) is not None}
+    if args.csv:
+        df = pd.read_csv(args.csv)
         if args.row is not None:
             if not (1 <= args.row <= len(df)):
                 ap.error(f"--row {args.row} out of range (1..{len(df)})")
             df = df.iloc[[args.row - 1]]
-        sc, tc = "src_gpu" in df.columns, "tgt_gpu" in df.columns
-        rows_in = [(r, str(r["src_gpu"]) if sc else args.src, str(r["tgt_gpu"]) if tc else args.tgt)
-                   for r in df.to_dict("records")]
+        rows_in = [(r, str(r.get("src_gpu")), str(r.get("tgt_gpu"))) for r in df.to_dict("records")]
+    elif cli_given:                       # mode 1: full input from CLI options
+        row = {k: _to_num(v) for k, v in cli_given.items()}
+        rows_in = [(row, str(row.get("src_gpu")), str(row.get("tgt_gpu")))]
     else:
-        if not args.set:
-            ap.error("provide either --kernel-stats (batch) or --set (single)")
-        d = {}
-        for kv in args.set:
-            k, v = kv.split("=", 1)
-            try:
-                d[k.strip()] = float(v)
-            except ValueError:
-                d[k.strip()] = v
-        rows_in = [(d, args.src, args.tgt)]
+        ap.error("provide inputs via --csv FILE (mode 2) or the per-column CLI options (mode 1)")
 
     for _, sg, tg in rows_in:
-        for nm, gpu in [("--src", sg), ("--tgt", tg)]:
-            if gpu is None:
-                ap.error(f"{nm} GPU not given (and not a column in the CSV)")
+        for nm, gpu in [("src_gpu", sg), ("tgt_gpu", tg)]:
+            if gpu in (None, "None", ""):
+                ap.error(f"{nm} not given")
         if str(sg).lower() not in known:
             ap.error(f"no per-source model for src '{sg}' (have: {sorted(known)})")
 
@@ -176,9 +202,9 @@ def main():
             row, sg, tg = rows_in[i]
             spec = resolve_specs(row)
             if spec is None:
-                ap.error("input is missing the GPU spec columns (SRC ... / TGT ...). "
-                         "Every input must be in the CSV — build it with "
-                         "MLP_NN/examples/prepare_example.py.")
+                ap.error("input is missing the GPU spec columns (SRC ... / TGT ... / TGT peak_*). "
+                         "Every input must be supplied — in the CSV or as CLI options. "
+                         "Build a CSV with MLP_NN/examples/prepare_data.py.")
             sv, tv, pk = spec
             sub.append(build_sample(row, sg, tg, sv, tv, pk, reg_out, brk_out))
         for i, r in zip(idxs, to_rows(core.predict(model, stats, sub), sub)):
@@ -193,8 +219,8 @@ def main():
             w.writerow({c: (f"{r[c]:.6g}" if isinstance(r[c], float) else r[c]) for c in cols})
 
     log = [f"v1.5 cross-GPU estimator  run @ {datetime.datetime.now().isoformat(timespec='seconds')}",
-           f"model    : {meta['model']}", "specs    : read from the input CSV (SRC/TGT columns)",
-           f"mode     : {'batch' if args.kernel_stats else 'single'}" + (f", row {args.row}" if args.row else ""),
+           f"model    : {meta['model']}", "specs    : read from the input (SRC/TGT columns/options)",
+           f"mode     : {'CSV' if args.csv else 'CLI'}" + (f", row {args.row}" if args.row else ""),
            f"kernels  : {len(rows_in)}   src->tgt: "
            + ", ".join(f"{sg}->{tg}" for _, sg, tg in rows_in[:4]) + (" ..." if len(rows_in) > 4 else ""),
            f"mean predicted ExecTime: {np.nanmean([r['Execution Time [ns]'] for r in out_rows]):.1f} ns",
