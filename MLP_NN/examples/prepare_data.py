@@ -56,58 +56,70 @@ def gpu_specs(full, g):
 def main():
     ap = argparse.ArgumentParser(description="build all-columns example from raw NCU + spec sheet")
     ap.add_argument("--raw", default="data/20260522_wide.zip")
-    ap.add_argument("--src", required=True)
-    ap.add_argument("--tgt", help="target GPU (default: round-robin over the others)")
+    ap.add_argument("--src", default="A100,H100,GB200",
+                    help="source GPU(s), comma-separated (default: all three, mixed)")
     ap.add_argument("--n", type=int, default=20)
     ap.add_argument("--out", help="output CSV (default: a meaningful name in MLP_NN/examples/)")
     args = ap.parse_args()
     if not os.path.exists(args.raw):
         sys.exit(f"raw NCU data not found: {args.raw} (not shipped — place it in data/)")
-    if not args.out:                       # meaningful default: source GPU + size
-        suffix = f"_to_{args.tgt}" if args.tgt else ""   # else targets round-robin in-file
-        args.out = os.path.join(HERE, f"example_input_{args.src}{suffix}_{args.n}kernels.csv")
+    sources = [s.strip() for s in args.src.split(",") if s.strip()]
+    if not args.out:                       # meaningful default: source(s) + size
+        tag = sources[0] if len(sources) == 1 else "mixed-src"
+        args.out = os.path.join(HERE, f"example_input_{tag}_{args.n}kernels.csv")
 
     full = {g: extract_gpu_data(args.raw, g.lower()) for g in ALL_GPUS}
     specs = {g: gpu_specs(full, g) for g in ALL_GPUS}
-    sg = args.src
-    others = [g for g in ALL_GPUS if g.lower() != sg.lower()]
 
-    rows = []
-    for df in full[sg].values():
-        for _, r in df.iterrows():
-            if any(pd.isna(pd.to_numeric(r.get(c), errors="coerce"))
-                   for c in ("Execution Time", "Block Size", "Memory Throughput [byte/s]")):
-                continue
-            rows.append(r)
-            if len(rows) >= args.n:
-                break
-        if len(rows) >= args.n:
-            break
-    if not rows:
-        sys.exit(f"no complete kernel rows for source GPU {sg} in {args.raw}")
+    def complete_rows(sg):
+        out = []
+        for df in full[sg].values():
+            for _, r in df.iterrows():
+                if any(pd.isna(pd.to_numeric(r.get(c), errors="coerce"))
+                       for c in ("Execution Time", "Block Size", "Memory Throughput [byte/s]")):
+                    continue
+                out.append(r)
+        return out
+    pools = {sg: complete_rows(sg) for sg in sources}
+    if not any(pools.values()):
+        sys.exit(f"no complete kernel rows for sources {sources} in {args.raw}")
 
     sp_cols = ([f"SRC {c}" for c in core.GPU_SPEC_FEATURES]
                + [f"TGT {c}" for c in core.GPU_SPEC_FEATURES]
                + ["TGT peak_fp32", "TGT peak_fp64", "TGT dram_bw"])
     header = ["Kernel Name", "src_gpu", "tgt_gpu"] + NCU_COLS + sp_cols
-    svec, _ = specs[sg]
-    recs = []
-    for i, r in enumerate(rows):
-        tg = args.tgt or others[i % len(others)]
-        tvec, (tp32, tp64, tbw) = specs[tg]
-        rec = {"Kernel Name": r.get("Kernel Name", f"kernel_{i}"), "src_gpu": sg, "tgt_gpu": tg}
-        for c in NCU_COLS:
-            rec[c] = r.get(c)
-        for j, c in enumerate(core.GPU_SPEC_FEATURES):
-            rec[f"SRC {c}"] = repr(float(svec[j])); rec[f"TGT {c}"] = repr(float(tvec[j]))
-        rec["TGT peak_fp32"] = repr(float(tp32)); rec["TGT peak_fp64"] = repr(float(tp64))
-        rec["TGT dram_bw"] = repr(float(tbw))
-        recs.append(rec)
+
+    # round-robin over the source GPUs so the example mixes them; target cycles
+    # over the OTHER GPUs for each source.
+    recs, ptr, i = [], {sg: 0 for sg in sources}, 0
+    while len(recs) < args.n:
+        advanced = False
+        for sg in sources:
+            if len(recs) >= args.n:
+                break
+            if ptr[sg] >= len(pools[sg]):
+                continue
+            r = pools[sg][ptr[sg]]; ptr[sg] += 1; advanced = True
+            others = [g for g in ALL_GPUS if g.lower() != sg.lower()]
+            tg = others[i % len(others)]; i += 1
+            svec, _ = specs[sg]; tvec, (tp32, tp64, tbw) = specs[tg]
+            rec = {"Kernel Name": r.get("Kernel Name", f"kernel_{len(recs)}"),
+                   "src_gpu": sg, "tgt_gpu": tg}
+            for c in NCU_COLS:
+                rec[c] = r.get(c)
+            for j, c in enumerate(core.GPU_SPEC_FEATURES):
+                rec[f"SRC {c}"] = repr(float(svec[j])); rec[f"TGT {c}"] = repr(float(tvec[j]))
+            rec["TGT peak_fp32"] = repr(float(tp32)); rec["TGT peak_fp64"] = repr(float(tp64))
+            rec["TGT dram_bw"] = repr(float(tbw))
+            recs.append(rec)
+        if not advanced:
+            break
 
     os.makedirs(os.path.dirname(args.out) or ".", exist_ok=True)
     pd.DataFrame(recs)[header].to_csv(args.out, index=False)
+    n_by_src = {sg: sum(1 for r in recs if r["src_gpu"] == sg) for sg in sources}
     print(f"wrote {args.out}: {len(recs)} kernels, {len(header)} columns "
-          f"({len(NCU_COLS)} NCU + {len(sp_cols)} spec-sheet)")
+          f"({len(NCU_COLS)} NCU + {len(sp_cols)} spec-sheet); by source: {n_by_src}")
 
 
 if __name__ == "__main__":

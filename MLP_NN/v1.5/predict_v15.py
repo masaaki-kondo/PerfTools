@@ -3,21 +3,21 @@
 Predicts a kernel's metrics on a TARGET GPU from its NCU profile measured on a
 SOURCE GPU.  Fully offline.  Depends only on numpy / pandas / torch + v15_core.
 
-INPUTS
-  One CSV (--kernel-stats) — EVERY input is in it, one row per kernel:
-    - NCU columns (kernel profile on the source GPU), and
-    - GPU spec columns "SRC <spec>" / "TGT <spec>" + "TGT peak_*".
-  Build it from raw NCU + the spec sheet with MLP_NN/examples/prepare_data.py.
+TWO INPUT MODES (every input is supplied; no hidden lookups):
+  1. full input via CLI options — one prediction, every column is a flag.
+  2. --csv FILE --row {N|all} — a CSV (NCU + SRC/TGT spec columns per row);
+     --row is REQUIRED: a 1-based data row, or 'all' for every row.
+  Build a CSV from raw NCU + the spec sheet with MLP_NN/examples/prepare_data.py.
 
 OUTPUT
   --out pred.csv   estimated metrics (+ roofline quantities) per kernel.
   --log run.log    plain-text run summary (also to stderr).
 
 EXAMPLES
-  python MLP_NN/v1.5/predict_v15.py --kernel-stats MLP_NN/examples/example_input_A100_20kernels.csv \
-         --out pred.csv --log run.log
-  python MLP_NN/v1.5/predict_v15.py --kernel-stats MLP_NN/examples/example_input_A100_20kernels.csv \
-         --row 3 --out row3.csv
+  python MLP_NN/v1.5/predict_v15.py \
+         --csv MLP_NN/examples/example_input_mixed-src_20kernels.csv --row all --out pred.csv
+  python MLP_NN/v1.5/predict_v15.py \
+         --csv MLP_NN/examples/example_input_mixed-src_20kernels.csv --row 3 --out row3.csv
 """
 import os, sys, csv, re, json, pickle, argparse, datetime
 HERE = os.path.dirname(os.path.abspath(__file__))
@@ -153,7 +153,8 @@ def main():
     # mode 2: CSV
     m2 = ap.add_argument_group("Mode 2: CSV input")
     m2.add_argument("--csv", "--kernel-stats", dest="csv", help="input CSV (all columns)")
-    m2.add_argument("--row", type=int, help="predict only this 1-based data row of the CSV")
+    m2.add_argument("--row", help="REQUIRED with --csv: a 1-based data row number, "
+                                  "or 'all' to predict every data row (the header is metadata)")
     # mode 1: every input column as its own CLI option
     m1 = ap.add_argument_group("Mode 1: full input via CLI options (one prediction)")
     for c in INPUT_COLS:
@@ -173,10 +174,16 @@ def main():
     cli_given = {DEST2COL[d]: getattr(args, d) for d in DEST2COL if getattr(args, d) is not None}
     if args.csv:
         df = pd.read_csv(args.csv)
-        if args.row is not None:
-            if not (1 <= args.row <= len(df)):
-                ap.error(f"--row {args.row} out of range (1..{len(df)})")
-            df = df.iloc[[args.row - 1]]
+        if args.row is None:
+            ap.error("--row is required with --csv: a 1-based row number, or 'all'")
+        if str(args.row).lower() != "all":
+            try:
+                n = int(args.row)
+            except ValueError:
+                ap.error("--row must be an integer or 'all'")
+            if not (1 <= n <= len(df)):
+                ap.error(f"--row {n} out of range (1..{len(df)})")
+            df = df.iloc[[n - 1]]
         rows_in = [(r, str(r.get("src_gpu")), str(r.get("tgt_gpu"))) for r in df.to_dict("records")]
     elif cli_given:                       # mode 1: full input from CLI options
         row = {k: _to_num(v) for k, v in cli_given.items()}

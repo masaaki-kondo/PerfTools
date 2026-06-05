@@ -33,13 +33,16 @@ python MLP_NN/v1.5/predict_v15.py --out pred.csv \
 ```
 Run `predict_v15.py --help` to see the flag for every input column.
 
-**Mode 2 — CSV (+ optional row number)** (one or many kernels):
+**Mode 2 — CSV + `--row`** (one or many kernels). `--row` is **required**: a
+1-based data row, or `all` for every row (the header is metadata):
 ```bash
+# every kernel in the CSV
 python MLP_NN/v1.5/predict_v15.py \
-    --csv MLP_NN/examples/example_input_A100_20kernels.csv --out pred.csv --log run.log
+    --csv MLP_NN/examples/example_input_mixed-src_20kernels.csv --row all --out pred.csv --log run.log
 
+# just one row
 python MLP_NN/v1.5/predict_v15.py \
-    --csv MLP_NN/examples/example_input_A100_20kernels.csv --row 3 --out row3.csv
+    --csv MLP_NN/examples/example_input_mixed-src_20kernels.csv --row 3 --out row3.csv
 ```
 Build such a CSV from a raw NCU export + the spec sheet with
 `MLP_NN/examples/prepare_data.py`.
@@ -96,7 +99,7 @@ MLP_NN/v1.5/
   README.md
 MLP_NN/examples/
   prepare_data.py                     build an input CSV from raw NCU + the spec sheet
-  example_input_A100_20kernels.csv    20-row example (all columns)
+  example_input_mixed-src_20kernels.csv    20-row example (all columns)
 data/
   gpu_microarch_specs.csv             the spec sheet
   (raw NCU data is large and NOT shipped — place here to rebuild examples)
