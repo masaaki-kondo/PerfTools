@@ -1,12 +1,7 @@
 # v1.5 cross-GPU kernel estimator — output
-# INPUT SOURCES:
-#   kernel stats  : measured by NCU on the SOURCE GPU (user-supplied, per kernel)
-#   GPU specs     : static specs.csv, looked up by --src / --tgt GPU name
-#   roofline terms: COMPUTED in-tool (bytes=MemThr[byte/s]*ExecTime;
-#                   flops=(2*FFMA+FADD+FMUL)*cycles; t_roof=max(bytes/BW,flops/peak))
-# OUTPUT COLUMNS  : kernel_name/src_gpu/tgt_gpu = identifiers;
-#   Execution Time [ns], Memory Throughput [%], Achieved Occupancy, brk_* = v1.5 predictions;
-#   t_mem/t_comp/t_roof_ns, efficiency_eta(=t_roof/ExecTime) = roofline quantities.
+# INPUT SOURCES: kernel stats = NCU on the SOURCE GPU; GPU specs = spec sheet (data/);
+#   roofline terms COMPUTED in-tool (bytes=MemThr[byte/s]*ExecTime; flops=(2*FFMA+FADD+FMUL)*cycles).
+# OUTPUTS: ExecTime/Mem%/Occupancy/brk_* = v1.5 predictions; t_*_ns + efficiency_eta = roofline.
 kernel_name,src_gpu,tgt_gpu,Execution Time [ns],Memory Throughput [%],Achieved Occupancy,brk_memory,brk_pipeline_contention,brk_sync,brk_scheduling_overhead,t_mem_ns,t_comp_ns,t_roof_ns,efficiency_eta
 "void adam<float, float>(T1 *, T1 *, T1 *, const T2 *, float, float, float, float, float, int, unsigned long, adamMode_t, float)",A100,H100,204590,4.97567,68.0798,0.20440285,0.33880943,0.00050772843,0.45628002,2391.61,63295.8,63295.8,0.309379
 "void adam<float, float>(T1 *, T1 *, T1 *, const T2 *, float, float, float, float, float, int, unsigned long, adamMode_t, float)",A100,GB200,4.16115e+07,7.18538,76.4532,0.09143527,0.43811232,0.00030770697,0.47014472,1.74793e+06,1.12841e+07,1.12841e+07,0.271177

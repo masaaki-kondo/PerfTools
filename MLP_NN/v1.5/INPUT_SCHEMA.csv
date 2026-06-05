@@ -1,51 +1,78 @@
 column,source,role
-src_gpu,user (GPU name),row in specs.csv the kernel was profiled on
-tgt_gpu,user (GPU name),row in specs.csv to estimate for
-Block Size,NCU (source GPU),kernel launch config
-Grid Size,NCU (source GPU),kernel launch config
-Threads,NCU (source GPU),kernel launch config
-Registers Per Thread [register/thread],NCU (source GPU),kernel launch config
-Static Shared Memory Per Block [byte/block],NCU (source GPU),kernel launch config
-Dynamic Shared Memory Per Block [byte/block],NCU (source GPU),kernel launch config
-Shared Memory Per Block [byte/block],NCU (source GPU),kernel launch config
-Achieved Occupancy,NCU (source GPU),workload / throughput profile
-Achieved Active Warps Per SM [warp],NCU (source GPU),workload / throughput profile
-Compute (SM) Throughput [%],NCU (source GPU),workload / throughput profile
-Memory Throughput [%],NCU (source GPU),workload / throughput profile
-L1/TEX Cache Throughput [%],NCU (source GPU),workload / throughput profile
-L2 Cache Throughput [%],NCU (source GPU),workload / throughput profile
-Memory Throughput [byte/s],NCU (source GPU),workload / throughput profile
-Eligible Warps Per Scheduler [warp],NCU (source GPU),workload / throughput profile
-Executed Ipc Active [inst/cycle],NCU (source GPU),workload / throughput profile
-Warp Cycles Per Executed Instruction [cycle/inst],NCU (source GPU),workload / throughput profile
-Theoretical Active Warps per SM [warp],NCU (source GPU),workload / throughput profile
-Waves Per SM,NCU (source GPU),workload / throughput profile
-Block Limit Registers [block],NCU (source GPU),workload / throughput profile
-Block Limit Warps [block],NCU (source GPU),workload / throughput profile
-Block Limit SM [block],NCU (source GPU),workload / throughput profile
-Block Limit Shared Mem [block],NCU (source GPU),workload / throughput profile
-Stall Barrier [inst],NCU (source GPU),warp-stall reason (per inst)
-Stall Branch Resolving [inst],NCU (source GPU),warp-stall reason (per inst)
-Stall Dispatch Stall [inst],NCU (source GPU),warp-stall reason (per inst)
-Stall Drain [inst],NCU (source GPU),warp-stall reason (per inst)
-Stall LG Throttle [inst],NCU (source GPU),warp-stall reason (per inst)
-Stall Long Scoreboard [inst],NCU (source GPU),warp-stall reason (per inst)
-Stall MIO Throttle [inst],NCU (source GPU),warp-stall reason (per inst)
-Stall Math Pipe Throttle [inst],NCU (source GPU),warp-stall reason (per inst)
-Stall Membar [inst],NCU (source GPU),warp-stall reason (per inst)
-Stall Misc [inst],NCU (source GPU),warp-stall reason (per inst)
-Stall No Instruction [inst],NCU (source GPU),warp-stall reason (per inst)
-Stall Not Selected [inst],NCU (source GPU),warp-stall reason (per inst)
-Stall Short Scoreboard [inst],NCU (source GPU),warp-stall reason (per inst)
-Stall Sleeping [inst],NCU (source GPU),warp-stall reason (per inst)
-Stall Tex Throttle [inst],NCU (source GPU),warp-stall reason (per inst)
-Stall Wait [inst],NCU (source GPU),warp-stall reason (per inst)
-Execution Time,NCU (source GPU),source-GPU kernel runtime (ns)
-Predicated-On FFMA Operations Per Cycle [inst],NCU (source GPU),raw counter -> reconstructs FLOPs for roofline
-Predicated-On FADD Thread Instructions Executed Per Cycle [inst/cycle],NCU (source GPU),raw counter -> reconstructs FLOPs for roofline
-Predicated-On FMUL Thread Instructions Executed Per Cycle [inst/cycle],NCU (source GPU),raw counter -> reconstructs FLOPs for roofline
-Predicated-On DFMA Operations Per Cycle [inst],NCU (source GPU),raw counter -> reconstructs FLOPs for roofline
-Predicated-On DADD Thread Instructions Executed Per Cycle [inst/cycle],NCU (source GPU),raw counter -> reconstructs FLOPs for roofline
-Predicated-On DMUL Thread Instructions Executed Per Cycle [inst/cycle],NCU (source GPU),raw counter -> reconstructs FLOPs for roofline
-Elapsed Cycles [cycle],NCU (source GPU),raw counter -> reconstructs FLOPs for roofline
-<GPU spec features>,static specs.csv (by --src/--tgt name),NOT supplied per run; shipped static per-generation file (from the spec sheet)
+src_gpu/tgt_gpu,user (GPU name),which spec-sheet rows to use
+Block Size,NCU (source GPU),kernel profile / counter
+Grid Size,NCU (source GPU),kernel profile / counter
+Threads,NCU (source GPU),kernel profile / counter
+Registers Per Thread [register/thread],NCU (source GPU),kernel profile / counter
+Static Shared Memory Per Block [byte/block],NCU (source GPU),kernel profile / counter
+Dynamic Shared Memory Per Block [byte/block],NCU (source GPU),kernel profile / counter
+Shared Memory Per Block [byte/block],NCU (source GPU),kernel profile / counter
+Achieved Occupancy,NCU (source GPU),kernel profile / counter
+Achieved Active Warps Per SM [warp],NCU (source GPU),kernel profile / counter
+Compute (SM) Throughput [%],NCU (source GPU),kernel profile / counter
+Memory Throughput [%],NCU (source GPU),kernel profile / counter
+L1/TEX Cache Throughput [%],NCU (source GPU),kernel profile / counter
+L2 Cache Throughput [%],NCU (source GPU),kernel profile / counter
+Memory Throughput [byte/s],NCU (source GPU),kernel profile / counter
+Eligible Warps Per Scheduler [warp],NCU (source GPU),kernel profile / counter
+Executed Ipc Active [inst/cycle],NCU (source GPU),kernel profile / counter
+Warp Cycles Per Executed Instruction [cycle/inst],NCU (source GPU),kernel profile / counter
+Theoretical Active Warps per SM [warp],NCU (source GPU),kernel profile / counter
+Waves Per SM,NCU (source GPU),kernel profile / counter
+Block Limit Registers [block],NCU (source GPU),kernel profile / counter
+Block Limit Warps [block],NCU (source GPU),kernel profile / counter
+Block Limit SM [block],NCU (source GPU),kernel profile / counter
+Block Limit Shared Mem [block],NCU (source GPU),kernel profile / counter
+Stall Barrier [inst],NCU (source GPU),kernel profile / counter
+Stall Branch Resolving [inst],NCU (source GPU),kernel profile / counter
+Stall Dispatch Stall [inst],NCU (source GPU),kernel profile / counter
+Stall Drain [inst],NCU (source GPU),kernel profile / counter
+Stall LG Throttle [inst],NCU (source GPU),kernel profile / counter
+Stall Long Scoreboard [inst],NCU (source GPU),kernel profile / counter
+Stall MIO Throttle [inst],NCU (source GPU),kernel profile / counter
+Stall Math Pipe Throttle [inst],NCU (source GPU),kernel profile / counter
+Stall Membar [inst],NCU (source GPU),kernel profile / counter
+Stall Misc [inst],NCU (source GPU),kernel profile / counter
+Stall No Instruction [inst],NCU (source GPU),kernel profile / counter
+Stall Not Selected [inst],NCU (source GPU),kernel profile / counter
+Stall Short Scoreboard [inst],NCU (source GPU),kernel profile / counter
+Stall Sleeping [inst],NCU (source GPU),kernel profile / counter
+Stall Tex Throttle [inst],NCU (source GPU),kernel profile / counter
+Stall Wait [inst],NCU (source GPU),kernel profile / counter
+Execution Time,NCU (source GPU),kernel profile / counter
+Predicated-On FFMA Operations Per Cycle [inst],NCU (source GPU),kernel profile / counter
+Predicated-On FADD Thread Instructions Executed Per Cycle [inst/cycle],NCU (source GPU),kernel profile / counter
+Predicated-On FMUL Thread Instructions Executed Per Cycle [inst/cycle],NCU (source GPU),kernel profile / counter
+Predicated-On DFMA Operations Per Cycle [inst],NCU (source GPU),kernel profile / counter
+Predicated-On DADD Thread Instructions Executed Per Cycle [inst/cycle],NCU (source GPU),kernel profile / counter
+Predicated-On DMUL Thread Instructions Executed Per Cycle [inst/cycle],NCU (source GPU),kernel profile / counter
+Elapsed Cycles [cycle],NCU (source GPU),kernel profile / counter
+SRC GPU Maximum Warps Per Scheduler [warp],spec sheet (data/),source GPU spec
+SRC Theoretical Active Warps per SM [warp],spec sheet (data/),source GPU spec
+SRC Theoretical Active Warps Per Scheduler [warp],spec sheet (data/),source GPU spec
+SRC Shared Memory Configuration Size [byte],spec sheet (data/),source GPU spec
+SRC Block Limit Warps [block],spec sheet (data/),source GPU spec
+SRC Peak FP32 / Peak FP64,spec sheet (data/),source GPU spec
+SRC DRAM BW per SM [byte/s/SM],spec sheet (data/),source GPU spec
+SRC L2 Size per SM [byte/SM],spec sheet (data/),source GPU spec
+SRC Peak FP32 / DRAM BW [flop/byte],spec sheet (data/),source GPU spec
+SRC Peak FP16 Tensor [flop/s],spec sheet (data/),source GPU spec
+SRC Peak Tensor / Peak FP32,spec sheet (data/),source GPU spec
+SRC DRAM Latency [ns],spec sheet (data/),source GPU spec
+SRC CPU-GPU BW [byte/s],spec sheet (data/),source GPU spec
+TGT GPU Maximum Warps Per Scheduler [warp],spec sheet (data/),target GPU spec
+TGT Theoretical Active Warps per SM [warp],spec sheet (data/),target GPU spec
+TGT Theoretical Active Warps Per Scheduler [warp],spec sheet (data/),target GPU spec
+TGT Shared Memory Configuration Size [byte],spec sheet (data/),target GPU spec
+TGT Block Limit Warps [block],spec sheet (data/),target GPU spec
+TGT Peak FP32 / Peak FP64,spec sheet (data/),target GPU spec
+TGT DRAM BW per SM [byte/s/SM],spec sheet (data/),target GPU spec
+TGT L2 Size per SM [byte/SM],spec sheet (data/),target GPU spec
+TGT Peak FP32 / DRAM BW [flop/byte],spec sheet (data/),target GPU spec
+TGT Peak FP16 Tensor [flop/s],spec sheet (data/),target GPU spec
+TGT Peak Tensor / Peak FP32,spec sheet (data/),target GPU spec
+TGT DRAM Latency [ns],spec sheet (data/),target GPU spec
+TGT CPU-GPU BW [byte/s],spec sheet (data/),target GPU spec
+TGT peak_fp32,spec sheet (data/),target roofline peak/BW
+TGT peak_fp64,spec sheet (data/),target roofline peak/BW
+TGT dram_bw,spec sheet (data/),target roofline peak/BW
