@@ -15,9 +15,9 @@ OUTPUT
 
 EXAMPLES
   python MLP_NN/v1.5/predict_v15.py \
-         --csv MLP_NN/examples/example_input_mixed-src_20kernels.csv --row all --out pred.csv
+         --csv MLP_NN/examples/example_inputs.csv --row all --out pred.csv
   python MLP_NN/v1.5/predict_v15.py \
-         --csv MLP_NN/examples/example_input_mixed-src_20kernels.csv --row 3 --out row3.csv
+         --csv MLP_NN/examples/example_inputs.csv --row 3 --out row3.csv
 """
 import os, sys, csv, re, json, pickle, argparse, datetime
 HERE = os.path.dirname(os.path.abspath(__file__))

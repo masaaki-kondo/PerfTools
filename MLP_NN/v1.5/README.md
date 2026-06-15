@@ -12,7 +12,7 @@ neural-network model (v1.5 = multi-branch MLP + roofline-derived input features)
 
 ```bash
 python MLP_NN/v1.5/predict_v15.py \
-    --csv MLP_NN/examples/example_input_mixed-src_20kernels.csv \
+    --csv MLP_NN/examples/example_inputs.csv \
     --row all --out pred.csv --log run.log
 ```
 
@@ -68,7 +68,7 @@ python MLP_NN/examples/prepare_data.py --raw data/<your_ncu_wide>.zip --n 20
 It reads the NCU columns from the export and fills the `SRC `/`TGT ` spec columns
 from the spec sheet (`data/gpu_microarch_specs.csv`). **Note:** the raw NCU export
 (Yoshida-san's profiling data) is large and is **not included in `/data`** — place
-the wide zip there first. The shipped `example_input_mixed-src_20kernels.csv` was
+the wide zip there first. The shipped `example_inputs.csv` was
 built this way.
 
 ## Input columns (what each row needs)
@@ -120,7 +120,7 @@ MLP_NN/v1.5/
   README.md
 MLP_NN/examples/
   prepare_data.py                          build an input CSV from raw NCU + the spec sheet
-  example_input_mixed-src_20kernels.csv    20-row example (all columns, mixed sources)
+  example_inputs.csv    20-row example (all columns, mixed sources)
 data/
   gpu_microarch_specs.csv                  the spec sheet
   (raw NCU data is large and NOT shipped — place here to rebuild examples)
