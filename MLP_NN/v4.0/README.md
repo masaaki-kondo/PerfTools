@@ -12,7 +12,7 @@ analytical formula evaluated at runtime. Fully offline.
 ## Quick start
 ```
 python MLP_NN/v4.0/predict_v40.py \
-       --csv MLP_NN/examples/example_kernels.csv --row all --out pred.csv
+       --csv MLP_NN/examples/example_inputs.csv --row all --out pred.csv
 ```
 
 ## What it predicts (per kernel)
@@ -54,7 +54,7 @@ kernel's NCU counters from your real SOURCE profile:
 | `TGT peak_fp64`   | target FP64 peak [flop/s]        | 80e12                    |
 | `TGT <spec>` (13) | target spec features (warps, shared-mem, L2/SM, DRAM latency, ...) | from datasheet |
 
-Easiest path: copy one row of `example_kernels.csv` for your kernel, then overwrite the
+Easiest path: copy one row of `example_inputs.csv` for your kernel, then overwrite the
 `TGT ...` columns with the future GPU's numbers and run `--row 1`. Or pass them as
 flags in Mode 1:
 ```
@@ -69,7 +69,7 @@ direction (bandwidth and compute scaling together, as real GPU generations do).
 python MLP_NN/examples/prepare_data.py --src A100,H100,GB200 --n N --out my.csv
 ```
 Needs a raw NCU export (not shipped); the spec sheet `data/gpu_microarch_specs.csv` is
-shipped. `example_kernels.csv` (all 147 kernels) is provided ready to use.
+shipped. `example_inputs.csv` (all 147 kernels) is provided ready to use.
 
 ## Input columns (79 per row)
 - metadata: `Kernel Name`, `src_gpu`, `tgt_gpu`
