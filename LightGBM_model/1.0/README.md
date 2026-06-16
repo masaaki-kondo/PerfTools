@@ -15,9 +15,9 @@ gpu_perf_analysis/
 │   └── 1.0/
 │       ├── README.md                  <-- This user guide
 │       ├── extract_features.py        <-- Script to parse NCU raw files and hardware specs
-│   └── AI_model/
-│       ├── run_inference.py       <-- Main CLI entry point for the frontend
-│       └── model/                 <-- Directory containing pre-trained LightGBM weight files (.txt) and .pkl mappings
+│       └── AI_model/
+│           ├── run_inference.py       <-- Main CLI entry point for the frontend
+│           └── model/                 <-- Directory containing pre-trained LightGBM weight files (.txt) and .pkl mappings
 ```
 
 ### Runtime Generated Files (Do NOT upload / Mark as gitignore)
@@ -26,8 +26,8 @@ LightGBM_model/
 └── 1.0/
     ├── __pycache__/                   <-- Automatically generated Python bytecode cache
     ├── config.yaml                    <-- Example: Automatically generated/updated configuration file
-├── extracted_features.csv         <-- Example: Intermediate Feature Matrix generated during inference
-└── predictions/                   <-- Example: Directory where final prediction CSVs and logs are saved
+    ├── extracted_features.csv         <-- Example: Intermediate Feature Matrix generated during inference
+    └── predictions/                   <-- Example: Directory where final prediction CSVs and logs are saved
 ```
 
 ---
