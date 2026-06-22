@@ -99,7 +99,14 @@ OUTPUT_REGRESSION = ["Execution Time", "Memory Throughput [%]", "Achieved Occupa
 
 ET, MEMPCT, OCC = 0, 1, 2
 BRK = list(STALL_BREAKDOWN_GROUPS.keys())
-KEEP, SRC_LOG_IDX, RATIO_CAP = [0, 1, 2, 3, 4], 7, 50.0
+KEEP, SRC_LOG_IDX = [0, 1, 2, 3, 4], 7
+# Log-ratio recovery bounds: pr_col is log(target_ET / source_ET); we clip to
+# this window before exp() to keep predictions in a physical band even when the
+# NN extrapolates wildly on far-out-of-distribution inputs.
+# log(0.001) ~= -6.9 (target 1000x faster);  log(100) ~= 4.6 (target 100x slower)
+LOG_RATIO_MIN, LOG_RATIO_MAX = -7.0, 5.0
+# Legacy alias retained so any out-of-tree caller importing RATIO_CAP still loads.
+RATIO_CAP = 50.0
 KEYS = ["kernel_config", "workload", "source_specs", "target_specs", "derived", "target_regression"]
 
 # Training-stat std floor. Features that were CONSTANT (or effectively constant)
@@ -186,7 +193,8 @@ def make_derived_raw(derived):
 
 
 def recover_et_relative(pr_col, src_ns):
-    return np.clip(pr_col, 0.0, RATIO_CAP) * src_ns
+    # pr_col is log(target_ET / source_ET) -- the v1.5 trained target.
+    return np.exp(np.clip(pr_col, LOG_RATIO_MIN, LOG_RATIO_MAX)) * src_ns
 
 
 # --------------------------------------------------------------------------- #
