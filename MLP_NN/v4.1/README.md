@@ -126,6 +126,23 @@ python MLP_NN/v4.1/predict_v41.py --csv inputs.csv --row all \
 ```
 
 Because v4.1 is no-ET, the record has **no** `I-derived::src_raw_exec_time_ns`. v4.1 is
-trained on diagonal pairs (including `src==tgt`) and clips its outputs, so **same-GPU
-(`pair_type=self`)** predictions are part of its training distribution -- unlike v1.5 /
-v2.1, which were trained on cross-GPU pairs only.
+trained on diagonal pairs (including `src==tgt`) and clips its outputs to physical
+ranges, so **same-GPU (`pair_type=self`)** predictions are part of its training
+distribution.
+
+## Benchmark corpus (20260522)
+
+A row-aligned input + tagged-truth pair is shipped under `data/`:
+
+- `data/raw_inputs_20260522.csv` — raw 79-col wide-form, ready for `--csv`.
+- `data/tagged_ground_truth_20260522.csv` — io_signal-tagged truth
+  (`meta-* + I-* + S-*`), same row order as the inputs.
+
+Coverage: 2486 rows = 9 (src→tgt) pairs across **A100 / H100 / GB200** including
+the three diagonals. GB10 dropped (corrupt byte/s). To score this model:
+
+```
+python MLP_NN/v4.1/predict_v41.py --csv data/raw_inputs_20260522.csv --row all \
+       --out preds.csv --dump-records preds_record.csv
+# row-for-row diff preds_record's O-* against tagged_ground_truth's S-*.
+```

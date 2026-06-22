@@ -150,3 +150,21 @@ row order) against a truth file of measured TARGET outputs (`S-*`).
 python MLP_NN/v1.5/predict_v15.py --csv inputs.csv --row all \
        --out preds.csv --dump-records records.csv
 ```
+
+## Benchmark corpus (20260522)
+
+A row-aligned input + tagged-truth pair is shipped under `data/`:
+
+- `data/raw_inputs_20260522.csv` — raw 79-col wide-form, ready for `--csv`.
+- `data/tagged_ground_truth_20260522.csv` — io_signal-tagged truth
+  (`meta-* + I-* + S-*`), same row order as the inputs.
+
+Coverage: 2486 rows = 9 (src→tgt) pairs across **A100 / H100 / GB200** including
+the three diagonals (`a100→a100`, `h100→h100`, `gb200→gb200`). GB10 dropped on
+both sides (its NCU byte/s is corrupt). To score this model against the truth:
+
+```
+python MLP_NN/v1.5/predict_v15.py --csv data/raw_inputs_20260522.csv --row all \
+       --out preds.csv --dump-records preds_record.csv
+# row-for-row diff preds_record's O-* against tagged_ground_truth's S-*.
+```
