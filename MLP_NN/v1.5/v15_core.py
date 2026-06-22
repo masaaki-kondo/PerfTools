@@ -102,19 +102,21 @@ BRK = list(STALL_BREAKDOWN_GROUPS.keys())
 KEEP, SRC_LOG_IDX, RATIO_CAP = [0, 1, 2, 3, 4], 7, 50.0
 KEYS = ["kernel_config", "workload", "source_specs", "target_specs", "derived", "target_regression"]
 
-# Training-stat std floor. Features that were CONSTANT during training have their
-# std floored at ~1e-8 in the saved stats; dividing a non-zero input deviation by
-# that floor blows the z-score to ~1e+10 and saturates the NN to garbage. Inference
-# inputs may legitimately differ from training-time-constant features (e.g.
-# Dynamic Shared Memory present in this kernel but absent in training set), so we
-# detect "floored" features (std <= STD_EPS) and zero their z-score, matching what
-# the network actually saw during training. The 18 floored stds sit at 1e-8 with a
-# wide gap to the next real feature (>1e-4); STD_EPS=1e-6 catches the dead set only.
+# Training-stat std floor. Features that were CONSTANT (or effectively constant)
+# during training have a tiny std in the saved stats; dividing an inference-time
+# deviation by that std blows the z-score to ~1e+10 and saturates the NN to
+# garbage. We use a RELATIVE threshold: a feature is treated as constant when
+# std <= STD_EPS * max(|mean|, 1.0) — this catches both truly-floored stds
+# (std=1e-8, anywhere) AND features whose absolute std is only "just above" the
+# floor but is microscopic relative to the feature's magnitude (e.g. DRAM BW per
+# SM has std=1.908e-5 and mean=1.888e+10 -> CV=1e-15, effectively constant). For
+# those features we set z=0, matching what the NN actually saw during training.
 STD_EPS = 1e-6
 def _safe_z(x, mean, std):
-    safe = np.where(std > STD_EPS, std, 1.0)
+    is_const = std <= STD_EPS * np.maximum(np.abs(mean), 1.0)
+    safe = np.where(is_const, 1.0, std)
     z = (x - mean) / safe
-    z = np.where(std > STD_EPS, z, 0.0)
+    z = np.where(is_const, 0.0, z)
     return z
 
 
