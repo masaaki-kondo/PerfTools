@@ -1,29 +1,30 @@
 # v4.1 -- cross-GPU CUDA kernel performance estimator (no-ET NN + single-axis trends)
 
 Predicts a CUDA kernel's metrics on a TARGET GPU from its NCU profile measured on a
-SOURCE GPU. **v4.1 = v4.0 (the no-ET pure NN) plus single-axis training**, so its
-secondary metrics (Memory Throughput %, Occupancy, stall breakdown) respond when you
-change memory throughput OR SM size **independently** -- not only when both scale
-together. Like v4.0: Execution Time is NOT a predictive input, and inference is a plain
+SOURCE GPU. v4.1 is a **no-ET pure neural network** with **single-axis distillation
+training**, so its secondary metrics (Memory Throughput %, Occupancy, stall breakdown)
+respond when you change memory throughput OR SM size **independently** -- not only when
+both scale together. Execution Time is NOT a predictive input, and inference is a plain
 neural-net forward pass (no analytical formula at runtime). Fully offline.
 
 - Depends only on: Python 3.11+, numpy, pandas, torch, and `../v1.5/v15_core.py`.
 - Supported GPUs: A100, H100, GB200 (HBM family) and future HBM GPUs.
-- Same CLI and output as v1.5 / v4.0 (drop-in).
+- Same CLI and output as v1.5 (drop-in).
 
-## How v4.1 differs from v4.0
-v4.0 was trained only along the GPU-generation direction (bandwidth and compute scaling
-together, as real generations do), so its Mem%/Occ/stall heads stayed flat when you
-varied a single axis. v4.1 adds synthetic training samples that vary **bandwidth only**
-and **compute/SM only**, so those heads learn a per-axis response.
+## What v4.1 trains for
+A naive cross-GPU model trained only along the GPU-generation direction (bandwidth and
+compute scaling together, as real generations do) has Mem%/Occ/stall heads that stay flat
+when you vary a single axis. v4.1 adds synthetic training samples that vary **bandwidth
+only** and **compute/SM only**, so those heads learn a per-axis response.
 
 Honest scope of the change:
 - The single-axis response is **partial**: clear for compute-bound kernels, weak for
   memory-bound ones (the bandwidth-vs-compute split is only loosely determined by 3
   collinear HBM GPUs; fully separating the axes needs decorrelated data, e.g. MIG).
-- **Interpolation accuracy is unchanged from v4.0** (same in-range fit, within noise).
-- Execution Time behaves the same as v4.0 (it is anchored to the roofline, which already
-  separates bandwidth and compute by physics).
+- **Interpolation accuracy on real GPU pairs is in line with the non-distilled baseline**
+  (same in-range fit, within noise).
+- Execution Time is anchored to the roofline, which already separates bandwidth and
+  compute by physics, so it is unaffected by the single-axis distillation.
 
 ## Quick start
 ```
@@ -98,7 +99,7 @@ a predictive feature.
 ## Files
 ```
 predict_v41.py     CLI (same arguments and output as v1.5 predict_v15.py)
-v40_core.py        model + feature construction + inference (pure NN, shared with v4.0)
+v40_core.py        model + feature construction + inference (pure NN)
 v41_artifact/      model_seed0-4.pt (5-seed ensemble) + meta.pkl
 README.md          this file
 ```
@@ -124,6 +125,7 @@ python MLP_NN/v4.1/predict_v41.py --csv inputs.csv --row all \
        --out preds.csv --dump-records records.csv
 ```
 
-Because v4.1 is no-ET, the record has **no** `I-derived::src_raw_exec_time_ns`. Unlike
-v1.5 / v2.1, v4.1 was trained on diagonal pairs and clips its outputs, so it predicts
-**same-GPU (`pair_type=self`) reliably** as well as cross-GPU.
+Because v4.1 is no-ET, the record has **no** `I-derived::src_raw_exec_time_ns`. v4.1 is
+trained on diagonal pairs (including `src==tgt`) and clips its outputs, so **same-GPU
+(`pair_type=self`)** predictions are part of its training distribution -- unlike v1.5 /
+v2.1, which were trained on cross-GPU pairs only.
