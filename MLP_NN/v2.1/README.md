@@ -90,3 +90,30 @@ README.md          this file
 ```
 Model weights: reuses `../v1.5/v15_artifact` (per-source models); analytical slopes are
 hard-coded in `predict_v21.py`.
+
+## Profiling records (`--dump-records`)
+
+`--dump-records PATH` writes a second CSV next to `--out`: one row per kernel in the
+**io_signal** schema, for scoring predictions against a separate ground-truth file.
+
+| group | columns |
+|---|---|
+| `meta-*` | `model, src_gpu, tgt_gpu, kernel, pair_type` (`self` if src==tgt else `cross`) |
+| `I-*` | every INPUT this model consumes — `kcfg / wl / srcspec / tgtspec(ratio) / derived` |
+| `O-*` | the model's PREDICTIONS (the 7 outputs) |
+| `aux-roofline::` | in-tool `t_mem_ns, t_comp_ns, t_roof_ns, efficiency_eta` |
+
+It writes **predictions only — no ground truth**. To score, compare row-for-row (same
+row order) against a truth file of measured TARGET outputs (`S-*`).
+
+```
+python MLP_NN/v2.1/predict_v21.py --csv inputs.csv --row all \
+       --out preds.csv --dump-records records.csv
+```
+
+> **Do NOT predict for the SAME GPU with v1.5 / v2.1.** These are *per-source* models
+> trained only to predict a *different* target GPU, so same-GPU inputs (`src==tgt`,
+> `pair_type=self`) are out-of-distribution: **Memory Throughput % and Achieved
+> Occupancy blow up** (those heads are unclipped, reaching ~1e13), and Execution Time /
+> breakdowns degrade badly (ExecTime ~50% MAPE, breakdown R²≈0). For same-GPU
+> prediction use **v4.0 / v4.1** (trained on diagonal pairs, with clipped outputs).

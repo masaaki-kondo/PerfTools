@@ -137,6 +137,9 @@ def main():
     ap.add_argument("--out", required=True)
     ap.add_argument("--log")
     ap.add_argument("--no-comments", action="store_true")
+    ap.add_argument("--dump-records", metavar="PATH",
+                    help="also write a per-kernel profiling record (io_signal schema: "
+                         "meta-/I-/O-; PREDICTIONS ONLY, no truth) to PATH")
     m2 = ap.add_argument_group("Mode 2: CSV input")
     m2.add_argument("--csv", "--kernel-stats", dest="csv", help="input CSV (all columns)")
     m2.add_argument("--row", help="REQUIRED with --csv: a 1-based data row number, "
@@ -195,6 +198,11 @@ def main():
         w = csv.DictWriter(f, fieldnames=cols); w.writeheader()
         for r in out_rows:
             w.writerow({c: (f"{r[c]:.6g}" if isinstance(r[c], float) else r[c]) for c in cols})
+
+    if args.dump_records:
+        n = core.dump_records(args.dump_records, "v4.0", samples, out_rows,
+                              v40_core._features, core.DERIVED_NAMES_V40, args.no_comments)
+        sys.stderr.write(f"records  : {n} rows -> {args.dump_records}\n")
 
     log = [f"v4.0 cross-GPU estimator (no-ET pure NN)  run @ {datetime.datetime.now().isoformat(timespec='seconds')}",
            f"model    : v4.0  ({meta['seeds']}-seed ensemble)", "specs    : read from the input (SRC/TGT columns/options)",

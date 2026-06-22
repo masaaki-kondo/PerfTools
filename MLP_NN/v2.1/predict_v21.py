@@ -192,6 +192,9 @@ def main():
     ap.add_argument("--out", required=True)
     ap.add_argument("--log")
     ap.add_argument("--no-comments", action="store_true")
+    ap.add_argument("--dump-records", metavar="PATH",
+                    help="also write a per-kernel profiling record (io_signal schema: "
+                         "meta-/I-/O-; PREDICTIONS ONLY, no truth) to PATH")
     m2 = ap.add_argument_group("Mode 2: CSV input")
     m2.add_argument("--csv", "--kernel-stats", dest="csv", help="input CSV (all columns)")
     m2.add_argument("--row", help="REQUIRED with --csv: a 1-based data row number, or 'all'")
@@ -238,6 +241,7 @@ def main():
             ap.error(f"no per-source model for src '{sg}' (have: {sorted(known)})")
 
     out_rows = [None] * len(rows_in)
+    all_samples = [None] * len(rows_in)
     by_src = {}
     for i, (_, sg, _) in enumerate(rows_in):
         by_src.setdefault(sg.lower(), []).append(i)
@@ -251,8 +255,8 @@ def main():
                 ap.error("input is missing the GPU spec columns (SRC ... / TGT ... / TGT peak_*).")
             sv, tv, pk = spec
             sub.append(build_sample(row, sg, tg, sv, tv, pk, reg_out, brk_out))
-        for i, r in zip(idxs, to_rows(predict_hybrid(model, stats, sub), sub)):
-            out_rows[i] = r
+        for i, r, smp in zip(idxs, to_rows(predict_hybrid(model, stats, sub), sub), sub):
+            out_rows[i] = r; all_samples[i] = smp
 
     cols = ["kernel_name", "src_gpu", "tgt_gpu"] + OUT_COLS
     with open(args.out, "w", newline="") as f:
@@ -261,6 +265,11 @@ def main():
         w = csv.DictWriter(f, fieldnames=cols); w.writeheader()
         for r in out_rows:
             w.writerow({c: (f"{r[c]:.6g}" if isinstance(r[c], float) else r[c]) for c in cols})
+
+    if args.dump_records:
+        n = core.dump_records(args.dump_records, "v2.1", all_samples, out_rows,
+                              core._featurize, core.DERIVED_NAMES_V15, args.no_comments)
+        sys.stderr.write(f"records  : {n} rows -> {args.dump_records}\n")
 
     log = [f"v2.1 cross-GPU estimator (hybrid)  run @ {datetime.datetime.now().isoformat(timespec='seconds')}",
            f"model    : v2.1  (v1.5 NN + analytical anchor out-of-range)", "specs    : read from the input",

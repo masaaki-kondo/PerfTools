@@ -217,3 +217,80 @@ def predict(model, stats, samples):
     et = recover_et_relative(pr[:, ET], src_ns)
     pb = po["breakdown"].numpy()
     return dict(et_p=et, pr=pr, pb=pb)
+
+
+# --------------------------------------------------------------------------- #
+# profiling records dump (io_signal schema; shared by every deliverable)       #
+# --------------------------------------------------------------------------- #
+# Per-model I-derived:: column names. The roofline-input feats are appended to
+# the derived branch at inference (see _featurize / v40_core._features).
+_ROOF7 = ["log_bytes", "log_fp32_flops", "log_fp64_flops", "log_t_mem_target",
+          "log_t_comp_target", "log_arith_intensity", "bottleneck_log_tmem_minus_tcomp"]
+# v1.5 / v2.1 (use source Execution Time as an input -> keep src_raw_exec_time_ns):
+DERIVED_NAMES_V15 = ["grid_to_sm_ratio", "threads_to_sm_ratio", "log_grid", "fills_gpu",
+                     "block_size_anchor", "src_raw_exec_time_ns"] + _ROOF7
+# v4.0 / v4.1 (no-ET: Execution Time is NOT an input -> src_raw_exec_time_ns REMOVED;
+# the no-ET models instead carry 4 extra source-roofline / log-rate inputs):
+DERIVED_NAMES_V40 = ["grid_to_sm_ratio", "threads_to_sm_ratio", "log_grid", "fills_gpu",
+                     "block_size_anchor"] + _ROOF7 + ["log_src_t_mem", "log_src_t_comp",
+                     "log_src_roof", "log_mem_throughput_bps"]
+
+
+def dump_records(path, model_tag, samples, out_rows, featurize_fn, derived_names, no_comments=False):
+    """Write a per-kernel profiling record in the io_signal schema:
+        meta-*  identity (+ pair_type = self/cross)
+        I-*     model INPUTS, grouped kcfg/wl/srcspec/tgtspec(ratio)/derived -- EXACTLY
+                the features THIS model consumes (an excluded input never appears; e.g.
+                v4.x has no I-derived::src_raw_exec_time_ns)
+        O-*     model PREDICTIONS (the 7 outputs)        aux-roofline::  in-tool roofline
+    PREDICTIONS ONLY -- no ground-truth columns. Join a separate truth record on
+    meta-(kernel, src_gpu, tgt_gpu) to score. For meta-pair_type=self (src==tgt) the
+    input's measured outputs ARE the target truth; for cross they are the source's, so
+    the deliverable cannot supply target truth here.
+    `featurize_fn(samples)` must return (D, _) with D holding the stacked input branches
+    (e.g. core._featurize or v40_core._features); `out_rows` are the to_rows() dicts.
+    """
+    import csv as _csv
+    D = featurize_fn(samples)[0]
+    wl_names = list(WORKLOAD_PROFILE_FEATURES) + list(STALL_FEATURES) + [f"src_brk_{b}" for b in BRK]
+    spec = [("I-kcfg::", "kernel_config", list(KERNEL_CONFIG_FEATURES)),
+            ("I-wl::", "workload", wl_names),
+            ("I-srcspec::", "source_specs", list(GPU_SPEC_FEATURES)),
+            ("I-tgtspec(ratio)::", "target_specs", list(GPU_SPEC_FEATURES)),
+            ("I-derived::", "derived", list(derived_names))]
+    groups = []                                   # (prefix, key, effective_names)
+    for pfx, key, names in spec:
+        w = D[key].shape[1]
+        if w != len(names):                       # width mismatch -> generic fallback (never silently drop)
+            names = [f"{key}_{i}" for i in range(w)]
+        groups.append((pfx, key, names))
+    out_keys = ([("O-Execution Time [ns]", "Execution Time [ns]"),
+                 ("O-Memory Throughput [%]", "Memory Throughput [%]"),
+                 ("O-Achieved Occupancy", "Achieved Occupancy")]
+                + [(f"O-brk_{b}", f"brk_{b}") for b in BRK])
+    aux_keys = [(f"aux-roofline::{k}", k) for k in ("t_mem_ns", "t_comp_ns", "t_roof_ns", "efficiency_eta")]
+    header = (["meta-model", "meta-src_gpu", "meta-tgt_gpu", "meta-kernel", "meta-pair_type"]
+              + [pfx + n for pfx, _, names in groups for n in names]
+              + [h for h, _ in out_keys] + [h for h, _ in aux_keys])
+
+    def fmt(v):
+        if isinstance(v, (float, np.floating)):
+            return f"{float(v):.8g}" if np.isfinite(v) else ""
+        return v
+    with open(path, "w", newline="") as f:
+        if not no_comments:
+            f.write(f"# {model_tag} profiling records -- io_signal schema (meta-/I-/O-); PREDICTIONS ONLY (no truth).\n")
+            f.write("# Join a separate truth record on meta-(kernel,src_gpu,tgt_gpu). pair_type=self => src==tgt (input measured == target truth).\n")
+        w = _csv.writer(f)
+        w.writerow(header)
+        for i, s in enumerate(samples):
+            r = out_rows[i]
+            pt = "self" if str(s["src_gpu"]).lower() == str(s["tgt_gpu"]).lower() else "cross"
+            line = [model_tag, s["src_gpu"], s["tgt_gpu"], s.get("kernel_name", ""), pt]
+            for _, key, names in groups:
+                arr = D[key][i]
+                line += [fmt(arr[j]) for j in range(len(names))]
+            line += [fmt(r[k]) for _, k in out_keys]
+            line += [fmt(r[k]) for _, k in aux_keys]
+            w.writerow(line)
+    return len(samples)

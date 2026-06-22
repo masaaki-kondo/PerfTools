@@ -92,3 +92,28 @@ v40_core.py        model + feature construction + inference (pure NN, no runtime
 v40_artifact/      model_seed0-4.pt (5-seed ensemble) + meta.pkl
 README.md          this file
 ```
+
+## Profiling records (`--dump-records`)
+
+`--dump-records PATH` writes a second CSV next to `--out`: one row per kernel in the
+**io_signal** schema, for scoring predictions against a separate ground-truth file.
+
+| group | columns |
+|---|---|
+| `meta-*` | `model, src_gpu, tgt_gpu, kernel, pair_type` (`self` if src==tgt else `cross`) |
+| `I-*` | every INPUT this model consumes — `kcfg / wl / srcspec / tgtspec(ratio) / derived` |
+| `O-*` | the model's PREDICTIONS (the 7 outputs) |
+| `aux-roofline::` | in-tool `t_mem_ns, t_comp_ns, t_roof_ns, efficiency_eta` |
+
+It writes **predictions only — no ground truth**. To score, compare row-for-row (same
+row order) against a truth file of measured TARGET outputs (`S-*`); for `pair_type=self`
+the input's own measured outputs ARE the target truth.
+
+```
+python MLP_NN/v4.0/predict_v40.py --csv inputs.csv --row all \
+       --out preds.csv --dump-records records.csv
+```
+
+Because v4.0 is no-ET, the record has **no** `I-derived::src_raw_exec_time_ns`. Unlike
+v1.5 / v2.1, v4.0 was trained on diagonal pairs and clips its outputs, so it predicts
+**same-GPU (`pair_type=self`) reliably** as well as cross-GPU.
