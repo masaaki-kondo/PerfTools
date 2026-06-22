@@ -110,10 +110,3 @@ row order) against a truth file of measured TARGET outputs (`S-*`).
 python MLP_NN/v2.1/predict_v21.py --csv inputs.csv --row all \
        --out preds.csv --dump-records records.csv
 ```
-
-> **Do NOT predict for the SAME GPU with v1.5 / v2.1.** These are *per-source* models
-> trained only to predict a *different* target GPU, so same-GPU inputs (`src==tgt`,
-> `pair_type=self`) are out-of-distribution: **Memory Throughput % and Achieved
-> Occupancy blow up** (those heads are unclipped, reaching ~1e13), and Execution Time /
-> breakdowns degrade badly (ExecTime ~50% MAPE, breakdown R²≈0). For same-GPU
-> prediction use **v4.0 / v4.1** (trained on diagonal pairs, with clipped outputs).

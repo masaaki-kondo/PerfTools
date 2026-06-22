@@ -75,7 +75,7 @@ def predict(models, meta, samples):
     cm = meta["cm"]; stats = meta["stats"]
     for k in IB:
         D[k] = np.where(np.isnan(D[k]), cm[k], D[k])
-    N = {k: torch.tensor((D[k] - stats[k][0]) / stats[k][1], dtype=torch.float32) for k in IB}
+    N = {k: torch.tensor(vc._safe_z(D[k], stats[k][0], stats[k][1]), dtype=torch.float32) for k in IB}
     rmn, rsd = stats["target_regression"]
     rlo, rhi = meta["clip"]
     lps, mems, occs, brks = [], [], [], []

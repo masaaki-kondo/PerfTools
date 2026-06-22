@@ -102,6 +102,21 @@ BRK = list(STALL_BREAKDOWN_GROUPS.keys())
 KEEP, SRC_LOG_IDX, RATIO_CAP = [0, 1, 2, 3, 4], 7, 50.0
 KEYS = ["kernel_config", "workload", "source_specs", "target_specs", "derived", "target_regression"]
 
+# Training-stat std floor. Features that were CONSTANT during training have their
+# std floored at ~1e-8 in the saved stats; dividing a non-zero input deviation by
+# that floor blows the z-score to ~1e+10 and saturates the NN to garbage. Inference
+# inputs may legitimately differ from training-time-constant features (e.g.
+# Dynamic Shared Memory present in this kernel but absent in training set), so we
+# detect "floored" features (std <= STD_EPS) and zero their z-score, matching what
+# the network actually saw during training. The 18 floored stds sit at 1e-8 with a
+# wide gap to the next real feature (>1e-4); STD_EPS=1e-6 catches the dead set only.
+STD_EPS = 1e-6
+def _safe_z(x, mean, std):
+    safe = np.where(std > STD_EPS, std, 1.0)
+    z = (x - mean) / safe
+    z = np.where(std > STD_EPS, z, 0.0)
+    return z
+
 
 # --------------------------------------------------------------------------- #
 # feature functions (verbatim)                                                 #
@@ -207,7 +222,7 @@ def predict(model, stats, samples):
     for k in KEYS:
         mean, std = stats[k]
         x = np.where(np.isnan(D[k]), mean, D[k])            # training-mean impute
-        N[k] = torch.tensor((x - mean) / std, dtype=torch.float32)
+        N[k] = torch.tensor(_safe_z(x, mean, std), dtype=torch.float32)
     model.eval()
     with torch.no_grad():
         po = model(N["kernel_config"], N["workload"], N["source_specs"],
