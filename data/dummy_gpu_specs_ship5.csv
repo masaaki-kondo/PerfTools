@@ -1,0 +1,26 @@
+spec,unit,G1_2X,G2_4X,G3_8X,G4_16X,G5_32X,confidence_notes,source
+purpose,,"gen 1: H200 x 2 resources, same clock","gen 2: H200 x 4 resources, same clock","gen 3: H200 x 8 resources, same clock","gen 4: H200 x 16 resources, same clock","gen 5: H200 x 32 resources, same clock","descriptive, not a model input",
+architecture,,dummy (Hopper-like SM),dummy (Hopper-like SM),dummy (Hopper-like SM),dummy (Hopper-like SM),dummy (Hopper-like SM),"descriptive, not a model input",
+compute_capability,,9.0,9.0,9.0,9.0,9.0,"inherited from GH100 (Hopper SM, unchanged)",H100/H200 column
+num_sms,count,264,528,1056,2112,4224,defined: H200 x 2^gen,make_dummy_gens.py (2026-09-18)
+memory_type,,HBM (2^n x H200),HBM (2^n x H200),HBM (2^n x H200),HBM (2^n x H200),HBM (2^n x H200),"descriptive, not a model input",
+dram_bandwidth,GB/s,9068,18136,36272,72544,145088,defined: H200 x 2^gen,make_dummy_gens.py (2026-09-18)
+cpu_gpu_interconnect,,PCIe 5.0 x16,PCIe 5.0 x16,PCIe 5.0 x16,PCIe 5.0 x16,PCIe 5.0 x16,"descriptive, not a model input",
+cpu_gpu_bandwidth,GB/s,128,128,128,128,128,defined: = H200 (fixed),make_dummy_gens.py (2026-09-18)
+sm_clock_boost,GHz,1.98,1.98,1.98,1.98,1.98,defined: = H200 (fixed),make_dummy_gens.py (2026-09-18)
+l1_shmem_combined_per_sm,KB,256,256,256,256,256,"inherited from GH100 (Hopper SM, unchanged)",H100/H200 column
+l2_cache_total,MB,100,200,400,800,1600,defined: H200 x 2^gen,make_dummy_gens.py (2026-09-18)
+shmem_per_sm_max,KB,228,228,228,228,228,"inherited from GH100 (Hopper SM, unchanged)",H100/H200 column
+l1_latency,cycles,40.7,40.7,40.7,40.7,40.7,"= H200 (same clock, same SM, same memory tech)",H200 column of gpu_microarch_specs_v3.csv
+l1_latency,ns,23.2,23.2,23.2,23.2,23.2,"= H200 (same clock, same SM, same memory tech)",H200 column of gpu_microarch_specs_v3.csv
+l2_latency,cycles,263,263,263,263,263,"= H200 (same clock, same SM, same memory tech)",H200 column of gpu_microarch_specs_v3.csv
+l2_latency,ns,150,150,150,150,150,"= H200 (same clock, same SM, same memory tech)",H200 column of gpu_microarch_specs_v3.csv
+dram_latency_paper,cycles,478.8,478.8,478.8,478.8,478.8,"= H200 (same clock, same SM, same memory tech)",H200 column of gpu_microarch_specs_v3.csv
+dram_latency_paper,ns,273,273,273,273,273,"= H200 (same clock, same SM, same memory tech)",H200 column of gpu_microarch_specs_v3.csv
+dram_latency_measured,ns,375,375,375,375,375,"= H200 (same clock, same SM, same memory tech)",H200 column of gpu_microarch_specs_v3.csv
+dram_latency_model_recommended,ns,350,350,350,350,350,"= H200 (same clock, same SM, same memory tech)",H200 column of gpu_microarch_specs_v3.csv
+fma_dependent_latency,cycles,4,4,4,4,4,"inherited from GH100 (Hopper SM, unchanged)",H100/H200 column
+int32_dependent_latency,cycles,,,,,,"inherited from GH100 (Hopper SM, unchanged)",H100/H200 column
+peak_fp32,TFLOPS,134.0,268.0,536.0,1072.0,2144.0,defined: H200 x 2^gen,make_dummy_gens.py (2026-09-18)
+peak_fp64,TFLOPS,68.0,136.0,272.0,544.0,1088.0,defined: H200 x 2^gen,make_dummy_gens.py (2026-09-18)
+peak_fp16_tensor,TFLOPS,1978,3956,7912,15824,31648,defined: H200 x 2^gen,make_dummy_gens.py (2026-09-18)
