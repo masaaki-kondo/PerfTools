@@ -1,60 +1,34 @@
-"""v3 cross-GPU kernel performance estimator -- CLI (self-contained).
+"""PINN v1.0 -- physics-informed cross-GPU kernel performance estimator (release 2026-10-16). Self-contained.
 
-v3 = v4.1 (no-ET pure NN) + per-prediction CONFIDENCE and error breakdown.
-v4.1 was the released NO-ET pure NN (no Execution Time as a predictive input; no
-analytical formula at runtime -- a plain neural-net forward pass). Same CLI and
-same I/O as v1.5 (predict_v15.py): a drop-in replacement. Fully offline.
+Predicts, for one CUDA kernel profiled on a source GPU, its execution time, memory throughput, occupancy and
+stall-cycle breakdown on a target GPU (real, or hypothetical via its specs). The network is trained with three
+physics laws (roofline floor, monotonicity, a bandwidth/compute scaling law); see README.md.
 
-TWO INPUT MODES (every input is supplied; no hidden lookups except the SOURCE GPU's
-datasheet bw/peak, looked up by src_gpu name for the roofline terms):
-  1. full input via CLI options -- one prediction, every column is a flag.
-  2. --csv FILE --row {N|all} -- a CSV (NCU + SRC/TGT spec columns per row).
-  Build a CSV from raw NCU + the spec sheet with MLP_NN/examples/prepare_data.py.
+Lineage: PINN v1.0 = the internal v3.22 inference code with the weights of the internal v3.21 production run.
 
-OUTPUT
-  --out pred.csv   estimated metrics (+ roofline quantities) per kernel.
-  --log run.log    plain-text run summary (also to stderr).
+INPUT   --csv FILE --row {N|all}: one row per kernel (ncu metrics + SRC/TGT spec columns), as in
+        MLP_NN/examples/example_inputs.csv; or every column as a CLI option (one prediction).
+        Specs come from data/gpu_microarch_specs_v3.csv; actual values (operating clocks etc.) from
+        runtime_inputs_training.csv in this folder, plus any --runtime-inputs FILE.
+OUTPUT  --out pred.csv: predicted metrics (+ roofline quantities) per kernel.
 
 EXAMPLES
-  python MLP_NN/v40/predict_v41.py \
-         --csv MLP_NN/examples/example_inputs.csv --row all --out pred.csv
-  python MLP_NN/v40/predict_v41.py \
-         --csv MLP_NN/examples/example_inputs.csv --row 3 --out row3.csv
+  python PINN/v1.0/predict_v10.py --csv MLP_NN/examples/example_inputs.csv --row all --out pred.csv
+  python PINN/v1.0/predict_v10.py --csv MLP_NN/examples/example_inputs.csv --row 3 --out row3.csv
 """
-# RELEASE 2026-10-16 (public): weights in v322_artifact/; specs from data/gpu_microarch_specs_v3.csv; actual values
-# from runtime_inputs_training.csv (+ --runtime-inputs). See README.md in this folder.
+# Feature and inference flags the weights were trained with (set before the feature lists are built at import).
 import os, sys, csv, re, pickle, argparse, datetime
-# v3.1 adds Metro's L1/L2 cache HIT RATES to the workload features. The flag must be
-# set BEFORE v15_core is imported, because the feature list is built at import time.
 os.environ["HITRATES"] = "1"
 os.environ["LAT_ANCHOR"] = "1"
-# v3.22 (2026-10-15) = v3.19 recipe + WAVE_ANCHOR=1 (one-wave floor: t >= ET_src / max(waves_src, 1) x per-SM ratio,
-# inside t_roof for the physics loss, the collocation grid and inference) + PINN_GRID extended to x256 (the x128
-# far-field turn-up of v3.19 was the x32 grid edge). Artifacts: v322_artifact (dummy / unseen) + v322_inrange_artifact.
 os.environ["INST_ANCHOR"] = "2"
-# v3.22 (2026-10-15) = v3.20 recipe (wave floor C=0.5, grid x256) trained on ALL store data (data/20261015_store_wide.zip:
-# every full ncu run of A100/H200/GH200/L40S + MIG 16/32/64-SM cells, USE_MIG_4G=1) + B300 as an nsys-only TARGET
-# (INCLUDE_B300=1; see data_pipeline_v2.nsys_only_target). LOGO: 7 folds (h200 h100 a100 gh200 l40s gb200 b300).
-# v3.22 (2026-10-15) = v3.21 + ROOFLINE_SLOPES=1 (training only: per-axis slope targets = roofline asymptotes instead of the
-# confounded fit). Inference identical to v3.21. Single-axis sweeps (scale_gpu_sweep AXIS=bw|comp|sm) are the acceptance test.
 os.environ["WAVE_ANCHOR"] = "1"            # one-wave floor inside t_roof (trained with it)
 os.environ["WAVE_ANCHOR_C"] = "0.5"        # trained at C=0.5 (data-supported: 3.4% of real rows below it, vs 22% at C=1)
 os.environ["SPEC_CLOCK"] = "operating"      # peaks at the clock the labels were measured at (2026-10-15)
 os.environ["MEM_CAP"] = "1"                 # memory-efficiency cap at inference (L40S 58.3 -> 46.9; see data_pipeline_v2.t_memcap_of)
 os.environ.setdefault("COMP_CAP", "1")        # compute-saturation cap at inference (data_pipeline_v2.t_compcap_of), 2026-10-16
 os.environ.setdefault("AXIS_TRANSPORT", "1")          # single-axis extrapolation fix (data_pipeline_v2.axis_weight / REF_BUILDER), 2026-10-16
-# v3.18 (2026-10-07) = v3.17 trained with SPEC_DROPOUT=0.2 (spec-feature dropout, training only) and scored
-# with the out-of-envelope residual cap (TRUST_MODE=cap: see v322_core.predict_seeds). LOGO vs v3.17, native
-# truth: H200 27.2 -> 19.5, H100 27.9 -> 22.5, A100 51.6 -> 34.2, GH200 31.0 -> 32.3, L40S 47.9 -> 47.9,
-# GB200 54.7 -> 46.8; in-sample 9.8 -> 16.7 (use v3.17 for targets that are in the training set).
-# v3.22 (2026-10-15) = v3.18 recipe retrained on the NAME-FIXED labels (2026-10-09 nsys/ncu kernel-name join fix;
-# pre-fix artifacts stay under v3.18/). Weights = v3.18/v318nf_artifact (dummy / unseen targets, spec dropout 0.2 +
-# trust cap) and v3.18/v317nf_inrange_artifact (in-range targets, v3.17 recipe), promoted here as v322_artifact and
-# v322_inrange_artifact. LOGO native truth: H200 18.5, H100 23.7, A100 34.4, GH200 31.0, L40S 47.9, GB200 48.9
-# (6-fold mean 34.1); in-sample 11.4 (routed); 16x far field COMM/COMP/LAT .052/.058/.038 (ideal .062).
 os.environ.setdefault("TRUST_Z", "6,12")
 os.environ.setdefault("TRUST_MODE", "cap")
-# v3.18: v3.15 (PINN, native labels) + latency floor + instruction floor on t_roof (the far-field blow-up is driven by zero-flop kernels)
 HERE = os.path.dirname(os.path.abspath(__file__))
 sys.path.insert(0, os.path.join(HERE, "..", "..")); sys.path.insert(0, HERE)   # repo root (shared MLP_NN package) + own v15_core copy
 # Spec sheet (specs only) + runtime inputs (actual values: training defaults, then the user's --runtime-inputs files).
@@ -69,7 +43,7 @@ import pandas as pd
 import torch
 import v15_core as core
 from MLP_NN import data_pipeline_v2 as dp   # spec_delta / GPU dicts (single source of truth)                    # feature extractors / MultiBranchMLP (shared)
-import v322_core                            # v3 no-ET inference + confidence
+import v10_core                            # v3 no-ET inference + confidence
 
 SPEC = core.GPU_SPEC_FEATURES
 SRC_PFX, TGT_PFX = "SRC ", "TGT "
@@ -308,7 +282,7 @@ def _to_num(v):
 # sweep moved along that line, never off it), so the merged estimator picks per ROW by the TARGET GPU:
 #   target in the training set  -> in-range artifact (v3.17 recipe), no trust cap
 #   anything else (dummy / new) -> v3.18 artifact, out-of-envelope residual cap on
-TRAINED_TARGETS = {"a100", "h100", "gb200", "h200", "gh200", "l40s", "b300",      # b300: trained target from v3.22
+TRAINED_TARGETS = {"a100", "h100", "gb200", "h200", "gh200", "l40s", "b300",      # b300: trained target
                    "h100_mig_1g", "h100_mig_2g", "h100_mig_3g"}      # production pool (USE_MIG_4G=0)
 _PER_ROW = ("trust_w", "et_p", "mem", "occ", "brk", "troof")
 _PER_SEED = ("et_seeds", "mem_seeds", "occ_seeds", "brk_seeds", "log_et_seeds")
@@ -321,22 +295,22 @@ def _is_trained(tgt):
 def route_predict(models, meta, samples, args):
     n = len(samples)
     inr = None; ia = args.inrange_artifact
-    if ia is None and os.path.realpath(args.artifact) == os.path.realpath(os.path.join(HERE, "v322_artifact")):
-        ia = None   # release 2026-10-16: in-range routing OFF until a v3.21 in-range model is tested (pass --inrange-artifact to opt in)
+    if ia is None and os.path.realpath(args.artifact) == os.path.realpath(os.path.join(HERE, "v10_artifact")):
+        ia = None   # the in-range model is not shipped: routing is off unless --inrange-artifact is given
     if not args.no_route and ia and os.path.exists(os.path.join(ia, "meta.pkl")):
-        inr = v322_core.load(ia)
+        inr = v10_core.load(ia)
     known = np.array([inr is not None and _is_trained(s["tgt_gpu"]) for s in samples], dtype=bool)
     if not known.any():
-        return v322_core.predict_seeds(models, meta, samples), ["v3.22"] * n
+        return v10_core.predict_seeds(models, meta, samples), ["PINN v1.0"] * n
     parts = {}
     saved = {k: os.environ.pop(k, None) for k in ("TRUST_Z", "TRUST_MODE")}   # in-range: no cap
     try:
-        parts[True] = v322_core.predict_seeds(inr[0], inr[1], [s for s, k in zip(samples, known) if k])
+        parts[True] = v10_core.predict_seeds(inr[0], inr[1], [s for s, k in zip(samples, known) if k])
     finally:
         for k, v in saved.items():
             if v is not None: os.environ[k] = v
     if (~known).any():
-        parts[False] = v322_core.predict_seeds(models, meta, [s for s, k in zip(samples, known) if not k])
+        parts[False] = v10_core.predict_seeds(models, meta, [s for s, k in zip(samples, known) if not k])
     R = {}
     for key in parts[True]:
         a = np.asarray(parts[True][key])
@@ -351,18 +325,18 @@ def route_predict(models, meta, samples, args):
         else:
             raise KeyError(f"router: unknown predict_seeds output {key!r}")
         R[key] = out
-    return R, ["v3.22-inrange" if k else "v3.22" for k in known]
+    return R, ["PINN v1.0-inrange" if k else "PINN v1.0" for k in known]
 
 
 def main():
     ap = argparse.ArgumentParser(
         description="v3 cross-GPU kernel estimator (no-ET NN + confidence). Two input modes: "
                     "(1) full input via CLI options, or (2) --csv FILE [--row N].")
-    ap.add_argument("--artifact", default=os.path.join(HERE, "v322_artifact"))   # release 2026-10-16: v3.21 production weights (3 seeds)
+    ap.add_argument("--artifact", default=os.path.join(HERE, "v10_artifact"))   # weights of the internal v3.21 production run (3 seeds)
     ap.add_argument("--inrange-artifact", default=None,
                     help="v3.17-recipe artifact (no spec dropout) used for TARGET GPUs that are in the "
-                         "training set. Default: v322_inrange_artifact, but ONLY when --artifact is the "
-                         "production v322_artifact -- a LOGO fold artifact is never routed (the in-range "
+                         "training set. Default: v10_inrange_artifact, but ONLY when --artifact is the "
+                         "production v10_artifact -- a LOGO fold artifact is never routed (the in-range "
                          "model has seen the held-out GPU, which would leak). See ROUTER below.")
     ap.add_argument("--no-route", action="store_true", help="use --artifact for every row")
     ap.add_argument("--out", required=True)
@@ -388,7 +362,7 @@ def main():
         m1.add_argument(_flag(c), dest=_dest(c), metavar="V", help=c)
     args = ap.parse_args()
 
-    models, meta = v322_core.load(args.artifact)
+    models, meta = v10_core.load(args.artifact)
     reg_out, brk_out = meta["reg_out"], meta["brk_out"]
     # sources the pipeline has datasheet values for (src SM count / DRAM latency for the latency floor).
     # v3.18 trains on H200 / GH200 / L40S as sources too, so they are valid here (2026-10-09).
@@ -435,7 +409,7 @@ def main():
     for r, how in zip(out_rows, routed): r["model_used"] = how
     cols_extra = []
     if args.confidence or args.truth:
-        C = v322_core.confidence(R, samples)
+        C = v10_core.confidence(R, samples)
         for i, r in enumerate(out_rows):
             for k in ("ExecTime", "Mem%", "Occupancy", "breakdown"):
                 r[f"conf_{k}"] = C[f"conf_{k}"][i]
@@ -448,9 +422,9 @@ def main():
                       + ["ens_cv_et", "ens_sd_mem", "ens_sd_occ", "ens_sd_brk",
                          "eta", "eta_violation", "log_dist_roof", "mem_consistency"])
     if args.truth:
-        cols_extra += v322_core.attach_errors(out_rows, args.truth)
+        cols_extra += v10_core.attach_errors(out_rows, args.truth)
     if args.confidence:
-        v322_core.print_confidence_legend()
+        v10_core.print_confidence_legend()
         import collections as _c
         sys.stderr.write("\nconfidence of THIS run:\n")
         for _k in ("ExecTime", "Mem%", "Occupancy", "breakdown"):
@@ -470,7 +444,7 @@ def main():
 
     if args.dump_records:
         n = core.dump_records(args.dump_records, "v3", samples, out_rows,
-                              v322_core._features, core.DERIVED_NAMES_V40, args.no_comments)
+                              v10_core._features, core.DERIVED_NAMES_V40, args.no_comments)
         sys.stderr.write(f"records  : {n} rows -> {args.dump_records}\n")
 
     log = [f"v3 cross-GPU estimator (no-ET NN + confidence)  run @ {datetime.datetime.now().isoformat(timespec='seconds')}",

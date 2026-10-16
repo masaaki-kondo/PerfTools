@@ -1,16 +1,17 @@
-# PINN v3.22: physics-informed cross-GPU kernel performance estimator (release 2026-10-16)
+# PINN v1.0: physics-informed cross-GPU kernel performance estimator (release 2026-10-16)
 
 Same task, inputs and outputs as MLP-NN v4.46 (`MLP_NN/v4.46/README.md`): one CUDA kernel profiled on a source
 GPU, predicted on a real or hypothetical target GPU. The difference is training: the network is also trained against
 three physics laws.
 
-The weights in `v322_artifact/` come from the v3.21 production training run (3 seeds); the v3.22 code adds the
-physics-guarded handling of distant GPU specs shared with MLP-NN v4.46.
+PINN v1.0 is the first public PINN release: the internal v3.22 inference code with the weights of the internal v3.21
+production training run (`v10_artifact/`, 3 seeds). The inference code includes the physics-guarded handling of
+distant GPU specs shared with MLP-NN v4.46.
 
 ## Run
 
 ```
-python PINN/v3.22/predict_v322.py --csv inputs.csv --row all --out predictions.csv
+python PINN/v1.0/predict_v10.py --csv inputs.csv --row all --out predictions.csv
 ```
 
 Options as in MLP-NN v4.46 (`--row`, `--confidence`, `--artifact`, `--runtime-inputs`). The separate in-range model

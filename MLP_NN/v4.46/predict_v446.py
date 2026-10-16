@@ -16,9 +16,9 @@ OUTPUT
   --log run.log    plain-text run summary (also to stderr).
 
 EXAMPLES
-  python MLP_NN/v40/predict_v41.py \
+  python MLP_NN/v4.46/predict_v446.py \
          --csv MLP_NN/examples/example_inputs.csv --row all --out pred.csv
-  python MLP_NN/v40/predict_v41.py \
+  python MLP_NN/v4.46/predict_v446.py \
          --csv MLP_NN/examples/example_inputs.csv --row 3 --out row3.csv
 """
 import os, sys, csv, re, pickle, argparse, datetime
