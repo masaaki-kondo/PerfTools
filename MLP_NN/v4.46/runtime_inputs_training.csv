@@ -1,0 +1,10 @@
+spec,unit,A100,H100,GB200,GB10,GH200,L40S,H200,H100_MIG_1g,H100_MIG_2g,H100_MIG_4g,B300,GH200_144GB,notes
+num_sms,count,,,148,,,,,,,,,,training value (GB200 was 148 in training; spec is 152)
+dram_bandwidth,GB/s,,3657,6580,,,,4812,461,894,1970,,,ACTUAL bandwidth values the models were trained with (device peak from ncu; GB200 = highest measured; MIG slices measured)
+peak_fp32,TFLOPS,,67,,,,,,8.12,16.24,32.48,,,training value (H100 column held H100 SXM datasheet values in training)
+peak_fp64,TFLOPS,,34,,,,,,4.12,8.24,16.48,2.5,,training value (B300 2.5 TF implied by measured FP64 kernels; H100 SXM values)
+peak_fp16_tensor,TFLOPS,,989,2250,,,,,119.9,239.8,479.6,,,training value (GB200 2250 = HGX B200 figure; H100 SXM)
+sm_clock_boost,GHz,,1.755,,,,,,,,,,,training value (H100 1.755 GHz proxy)
+sm_clock_operating,GHz,1.31,1.08,1.09,,1.98,2.52,1.98,1.78,1.08,1.78,1.965,,ACTUAL: SM clock the training measurements ran at (the models scale compute peaks by operating / boost)
+sm_clock_ncu,GHz,1.153,1.080,1.090,,1.979,1.065,1.979,1.782,1.080,1.778,,,ACTUAL: SM clock the ncu profiles ran at (ncu locks some GPUs to base clock)
+dram_latency_model_recommended,ns,395,370,440,210,370,600,370,370,370,370,440,,model DRAM-latency input (estimate; A100/H100 from measurement)
