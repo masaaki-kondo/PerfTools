@@ -1,0 +1,9 @@
+gpu_specs_csv: /mnt/c/Users/11792/.gemini/antigravity/scratch/gpu_perf_analysis/LightGBM_model/1.1/../../data/gpu_microarch_specs.csv
+group_by_config: false
+model_dir: /mnt/c/Users/11792/.gemini/antigravity/scratch/gpu_perf_analysis/LightGBM_model/1.1/AI_model/model
+ncu_csv_path: /mnt/c/Users/11792/.gemini/antigravity/scratch/gpu_perf_analysis/data/v3/raw_A100.csv
+output_csv: predictions/prediction_gb200.csv
+output_log: predictions/report_gb200.txt
+src_gpu: A100
+tgt_gpu: GB200
+version: '1.1'

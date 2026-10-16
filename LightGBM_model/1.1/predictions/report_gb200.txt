@@ -1,0 +1,110 @@
+============================================================
+      GPU PERFORMANCE PREDICTIONS (LightGBM v1.1)
+============================================================
+Source GPU: A100
+Target GPU: GB200
+NCU Data:   /mnt/c/Users/11792/.gemini/antigravity/scratch/gpu_perf_analysis/data/v3/raw_A100.csv
+Number of Kernels: 132
+
+--- Mean Predictions Across All Kernels ---
+  O-Execution Time                              : 62,565,213 ns
+  O-Memory Throughput [%]                       : 50.19%
+  O-Achieved Occupancy                          : 48.61%
+  O-breakdown_memory                            : 0.5974 (59.74%)
+  O-breakdown_pipeline_contention               : 0.2106 (21.06%)
+  O-breakdown_sync                              : 0.1172 (11.72%)
+  O-breakdown_scheduling_overhead               : 0.0714 (7.14%)
+
+--- Per-Kernel Predictions (Top 10) ---
+
+  Kernel: DCT8x8_kernel(float *, const float *, unsigned int, unsig...
+    O-Execution Time                            : 756,877 ns
+    O-Memory Throughput [%]                     : 71.33%
+    O-Achieved Occupancy                        : 76.75%
+    O-breakdown_memory                          : 0.4183
+    O-breakdown_pipeline_contention             : 0.1872
+    O-breakdown_sync                            : 0.0001
+    O-breakdown_scheduling_overhead             : 0.3635
+
+  Kernel: IDCT8x8_kernel(float *, const float *, unsigned int, unsi...
+    O-Execution Time                            : 787,501 ns
+    O-Memory Throughput [%]                     : 71.86%
+    O-Achieved Occupancy                        : 76.22%
+    O-breakdown_memory                          : 0.4288
+    O-breakdown_pipeline_contention             : 0.1794
+    O-breakdown_sync                            : 0.0001
+    O-breakdown_scheduling_overhead             : 0.3623
+
+  Kernel: advCubatureHex3D(int, const double *, const double *, con...
+    O-Execution Time                            : 2,101,713 ns
+    O-Memory Throughput [%]                     : 40.74%
+    O-Achieved Occupancy                        : 13.43%
+    O-breakdown_memory                          : 0.7075
+    O-breakdown_pipeline_contention             : 0.1443
+    O-breakdown_sync                            : 0.1293
+    O-breakdown_scheduling_overhead             : 0.0137
+
+  Kernel: ampere_h16816gemm_128x128_ldg8_stages_32x5_nn
+    O-Execution Time                            : 1,392,817 ns
+    O-Memory Throughput [%]                     : 40.77%
+    O-Achieved Occupancy                        : 11.95%
+    O-breakdown_memory                          : 0.2357
+    O-breakdown_pipeline_contention             : 0.7388
+    O-breakdown_sync                            : 0.1259
+    O-breakdown_scheduling_overhead             : 0.0361
+
+  Kernel: ampere_h16816gemm_128x256_ldg8_stages_64x3_nn
+    O-Execution Time                            : 20,849,947 ns
+    O-Memory Throughput [%]                     : 51.41%
+    O-Achieved Occupancy                        : 16.48%
+    O-breakdown_memory                          : 0.1988
+    O-breakdown_pipeline_contention             : 0.8405
+    O-breakdown_sync                            : 0.1347
+    O-breakdown_scheduling_overhead             : 0.0586
+
+  Kernel: ampere_h16816gemm_256x128_ldg8_stages_64x3_nn
+    O-Execution Time                            : 1,671,478 ns
+    O-Memory Throughput [%]                     : 49.31%
+    O-Achieved Occupancy                        : 16.53%
+    O-breakdown_memory                          : 0.2064
+    O-breakdown_pipeline_contention             : 0.8070
+    O-breakdown_sync                            : 0.1356
+    O-breakdown_scheduling_overhead             : 0.0591
+
+  Kernel: ampere_h16816gemm_64x128_ldg8_stages_32x6_nn
+    O-Execution Time                            : 100,684 ns
+    O-Memory Throughput [%]                     : 53.98%
+    O-Achieved Occupancy                        : 7.36%
+    O-breakdown_memory                          : 0.3679
+    O-breakdown_pipeline_contention             : 0.6376
+    O-breakdown_sync                            : 0.1033
+    O-breakdown_scheduling_overhead             : 0.0186
+
+  Kernel: ampere_sgemm_128x128_nn
+    O-Execution Time                            : 58,732,793 ns
+    O-Memory Throughput [%]                     : 32.36%
+    O-Achieved Occupancy                        : 28.55%
+    O-breakdown_memory                          : 0.1915
+    O-breakdown_pipeline_contention             : 0.6249
+    O-breakdown_sync                            : 0.0828
+    O-breakdown_scheduling_overhead             : 0.3434
+
+  Kernel: ampere_sgemm_128x32_nn
+    O-Execution Time                            : 262,638 ns
+    O-Memory Throughput [%]                     : 63.31%
+    O-Achieved Occupancy                        : 46.58%
+    O-breakdown_memory                          : 0.2140
+    O-breakdown_pipeline_contention             : 0.6064
+    O-breakdown_sync                            : 0.0878
+    O-breakdown_scheduling_overhead             : 0.3740
+
+  Kernel: ampere_sgemm_128x32_sliced1x4_nn
+    O-Execution Time                            : 335,268,140 ns
+    O-Memory Throughput [%]                     : 45.99%
+    O-Achieved Occupancy                        : 19.31%
+    O-breakdown_memory                          : 0.1855
+    O-breakdown_pipeline_contention             : 0.6450
+    O-breakdown_sync                            : 0.1153
+    O-breakdown_scheduling_overhead             : 0.3378
+
+============================================================
