@@ -105,7 +105,18 @@ def extract_ncu_data(gpu_name, ncu_path, group_by_config=False):
         for f in valid_files:
             try:
                 df = pd.read_csv(f)
-                df = df.rename(columns=RAW_ALIASES)
+                # Prefer canonical column; fill from alias if missing; drop alias to avoid duplicate columns
+                alias_pairs = [
+                    ('Achieved Occupancy', 'Achieved Occupancy [%]'),
+                    ('Warp Cycles Per Executed Instruction [cycle/inst]', 'Warp Cycles Per Executed Instruction [cycle]')
+                ]
+                for canonical, alias in alias_pairs:
+                    if canonical in df.columns and alias in df.columns:
+                        df[canonical] = df[canonical].fillna(df[alias])
+                        df = df.drop(columns=[alias])
+                    elif alias in df.columns and canonical not in df.columns:
+                        df = df.rename(columns={alias: canonical})
+
                 for col in df.columns:
                     if col in group_cols:
                         continue
