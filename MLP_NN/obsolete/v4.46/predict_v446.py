@@ -139,8 +139,9 @@ def _sheet_refs():
     if _SHEET_REFS is None:
         import csv, glob
         _SHEET_REFS = {}
-        root = os.path.join(HERE, "..", "..", "..", "data", "obsolete")
-        paths = sorted(set(glob.glob(os.path.join(root, "gpu_microarch_specs*.csv")) + [os.environ.get("GPU_SPEC_SHEET", "")]) - {""})
+        root = os.path.join(HERE, "..", "..", "..", "data")
+        paths = sorted(set(sum((glob.glob(os.path.join(root, d, "gpu_microarch_specs*.csv")) for d in ("", "v4", "obsolete")), [])
+                           + [os.environ.get("GPU_SPEC_SHEET", "")]) - {""})   # every shipped sheet: data/, data/v4/, data/obsolete/
         for p in paths:
             try:
                 rows = {r["spec"]: r for r in csv.DictReader(open(p))}
