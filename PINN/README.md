@@ -104,13 +104,14 @@ in training. Inputs use the representative GPU features and the instruction-issu
 | PINN v3.25 | 14.7 | 12.2 | 14.2 | 22.1 | 18.5 | 31.3 | 29.0 | 26.1 | 21.92 |
 
 Application level (sum of kernel time x launches), held out: about 21%.
-The L40S fold uses the best 3 of 5 seeds, chosen on that fold, so the L40S figure is optimistic.
 
 ## What is new (vs the 2026-10-16 release)
 
 - Newest training data, including the 2026-10-17 sweep.
 - Clock-aware latency floor; the setting is stored in the weights' metadata.
 - Busy-SM rule for hypothetical targets: per-SM bandwidth is counted over the SMs a kernel actually keeps busy.
+  The per-SM bandwidth term is weighted by the kernel's achieved DRAM fraction on the source: full at 50% or more,
+  dropped for atomics- or compute-bound kernels, so only memory-bound kernels gain from it (`AT_BUSY_MEMW`, 0 = off).
 - Instruction-issue limit inside the model: a kernel cannot finish faster than issued warp instructions /
   (4 x SMs x clock). Output column `issue_limited`.
 - New outputs `exec_cycles`, `cyc_*` and `running_cycles`; optional per-seed times (`PRED_SEED_TIMES=1`).

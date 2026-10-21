@@ -318,6 +318,13 @@ AT_BUSY_SMS = AT_BUSY_MODE in ("1", "2")
 AT_BUSY_BETA = float(os.environ.get("AT_BUSY_BETA", "1"))
 AT_BUSY_FORM = os.environ.get("AT_BUSY_FORM", "sym")   # "tgt": target side only, n_tgt -> min(n_tgt, max(grid, n_src))
 AT_BUSY_USE = set(os.environ.get("AT_BUSY_USE", "wave,mem,far").split(","))
+# AT_BUSY_MEMW (2026-10-21): only memory-bound kernels gain (or lose) from per-SM DRAM bandwidth in the one-wave floor.
+# The busy-SM bandwidth ratio enters t_wave_of as rb ** w, w = min(1, eta_src / AT_BUSY_MEMW), eta_src = the kernel's
+# achieved DRAM fraction on the source (bytes / time / peak BW). For w = 0 the per-SM bandwidth term is dropped (rb = 1):
+# atomics-bound histogram kernels (eta 0.00-0.16) neither take the bandwidth of the idle SMs nor pay for a lower per-SM
+# share; stream kernels (eta 0.5-0.9) keep the full rule. Default 0.5; 0 = off (the 10-18 rule).
+# Floor only: busy_feats (the MLP-NN network inputs, computed with the rule forced on) keep the trained definition.
+AT_BUSY_MEMW = float(os.environ.get("AT_BUSY_MEMW", "0.5"))
 
 
 _BUSY_FORCE = None   # busy_feats() evaluates the rule with it forced on
@@ -410,6 +417,11 @@ def t_wave_of(s):
             return min(v, _dhi / (lat * 1e-9)) if (lat == lat and lat > 0) else v
         if all(x == x and np.isfinite(x) and x > 0 for x in (bws, bwt, ss, st)):
             rb = _pbw(bws, ss, _ls) / _pbw(bwt, st, _lt, other=ss)
+            if AT_BUSY_MEMW > 0 and _BUSY_FORCE is None:   # memory-boundness weight (see AT_BUSY_MEMW); never in busy_feats (trained inputs)
+                _b = s.get("roofline_bytes", np.nan)
+                _eta = (_b / (et * 1e-9)) / bws if (_b == _b and _b >= 0) else np.nan
+                if _eta == _eta and np.isfinite(_eta):
+                    rb = rb ** min(1.0, max(0.0, _eta) / AT_BUSY_MEMW)
     r = min(ratio(pis, pit), rb)
     return WAVE_ANCHOR_C * et * 1e-9 / max(float(w), 1.0) * r
 

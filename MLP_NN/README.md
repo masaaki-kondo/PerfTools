@@ -138,6 +138,8 @@ Application level (sum of kernel time x launches), held out: about 20%.
 - Clock-aware latency floor; the setting is stored in the weights' metadata.
 - Busy-SM rule for hypothetical targets: per-SM bandwidth is counted over the SMs a kernel actually keeps busy. The
   network also receives it as 3 extra inputs, clipped to the training range.
+  The per-SM bandwidth term is weighted by the kernel's achieved DRAM fraction on the source: full at 50% or more,
+  dropped for atomics- or compute-bound kernels, so only memory-bound kernels gain from it (`AT_BUSY_MEMW`, 0 = off).
 - Instruction-issue limit inside the model: a kernel cannot finish faster than issued warp instructions /
   (4 x SMs x clock). Output column `issue_limited`.
 - New outputs `exec_cycles`, `cyc_*` and `running_cycles`; optional per-seed times (`PRED_SEED_TIMES=1`).

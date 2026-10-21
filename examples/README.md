@@ -16,7 +16,8 @@ examples/
 ```
 
 `kernel_inputs/kernel_inputs.csv` has 1,007 rows (147 kernels, Yoshida-san's HeCBench profiles), each a source -> target
-pair between two different GPUs among A100, H100 and GB200.
+pair between two different GPUs among A100, H100 and GB200. It includes `Issued Instructions [inst]`, so the
+instruction-issue limit and the execution-cycle breakdown are computed.
 
 ## Kernel prediction: kernel_inputs/
 
