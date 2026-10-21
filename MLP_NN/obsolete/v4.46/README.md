@@ -9,7 +9,7 @@ handling of GPU specs far from any measured GPU (see below).
 ## Run
 
 ```
-python MLP_NN/v4.46/predict_v446.py --csv inputs.csv --row all --out predictions.csv
+python MLP_NN/obsolete/v4.46/predict_v446.py --csv inputs.csv --row all --out predictions.csv
 ```
 
 `--row N` predicts one data row. `--confidence` adds per-output confidence estimates. `--artifact DIR` selects other
@@ -29,7 +29,7 @@ One row per kernel, same columns as `MLP_NN/examples/example_inputs.csv`:
 
 ## Spec sheet and runtime inputs
 
-- `data/gpu_microarch_specs_v3.csv`: **specs only** (vendor datasheets, architectural limits, published
+- `data/obsolete/gpu_microarch_specs_v3.csv`: **specs only** (vendor datasheets, architectural limits, published
   microbenchmarks). It holds no measured values.
 - `runtime_inputs_training.csv` (this folder): the **actual** values the model was trained with, applied on top of the
   spec sheet: operating SM clocks (some GPUs ran below boost), the bandwidth values used in training, and the model's

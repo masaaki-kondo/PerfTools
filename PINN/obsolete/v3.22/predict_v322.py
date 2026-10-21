@@ -8,13 +8,13 @@ Lineage: PINN v1.0 = the internal v3.22 inference code with the weights of the i
 
 INPUT   --csv FILE --row {N|all}: one row per kernel (ncu metrics + SRC/TGT spec columns), as in
         MLP_NN/examples/example_inputs.csv; or every column as a CLI option (one prediction).
-        Specs come from data/gpu_microarch_specs_v3.csv; actual values (operating clocks etc.) from
+        Specs come from data/obsolete/gpu_microarch_specs_v3.csv; actual values (operating clocks etc.) from
         runtime_inputs_training.csv in this folder, plus any --runtime-inputs FILE.
 OUTPUT  --out pred.csv: predicted metrics (+ roofline quantities) per kernel.
 
 EXAMPLES
-  python PINN/v1.0/predict_v10.py --csv MLP_NN/examples/example_inputs.csv --row all --out pred.csv
-  python PINN/v1.0/predict_v10.py --csv MLP_NN/examples/example_inputs.csv --row 3 --out row3.csv
+  python PINN/obsolete/v3.22/predict_v322.py --csv MLP_NN/examples/example_inputs.csv --row all --out pred.csv
+  python PINN/obsolete/v3.22/predict_v322.py --csv MLP_NN/examples/example_inputs.csv --row 3 --out row3.csv
 """
 # Feature and inference flags the weights were trained with (set before the feature lists are built at import).
 import os, sys, csv, re, pickle, argparse, datetime
@@ -30,9 +30,9 @@ os.environ.setdefault("AXIS_TRANSPORT", "1")          # single-axis extrapolatio
 os.environ.setdefault("TRUST_Z", "6,12")
 os.environ.setdefault("TRUST_MODE", "cap")
 HERE = os.path.dirname(os.path.abspath(__file__))
-sys.path.insert(0, os.path.join(HERE, "..", "..")); sys.path.insert(0, HERE)   # repo root (shared MLP_NN package) + own v15_core copy
+sys.path.insert(0, os.path.join(HERE, "..", "..", "..")); sys.path.insert(0, HERE)   # repo root (shared MLP_NN package) + own v15_core copy
 # Spec sheet (specs only) + runtime inputs (actual values: training defaults, then the user's --runtime-inputs files).
-os.environ.setdefault("GPU_SPEC_SHEET", os.path.join(HERE, "..", "..", "data", "gpu_microarch_specs_v3.csv"))
+os.environ.setdefault("GPU_SPEC_SHEET", os.path.join(HERE, "..", "..", "..", "data", "obsolete", "gpu_microarch_specs_v3.csv"))
 _ri = [os.path.join(HERE, "runtime_inputs_training.csv")]
 for _i, _a in enumerate(sys.argv):
     if _a == "--runtime-inputs" and _i + 1 < len(sys.argv):
@@ -43,7 +43,7 @@ import pandas as pd
 import torch
 import v15_core as core
 from MLP_NN import data_pipeline_v2 as dp   # spec_delta / GPU dicts (single source of truth)                    # feature extractors / MultiBranchMLP (shared)
-import v10_core                            # v3 no-ET inference + confidence
+import v322_core                            # v3 no-ET inference + confidence
 
 SPEC = core.GPU_SPEC_FEATURES
 SRC_PFX, TGT_PFX = "SRC ", "TGT "
@@ -122,7 +122,7 @@ def _sheet_refs():
     if _SHEET_REFS is None:
         import csv, glob
         _SHEET_REFS = {}
-        root = os.path.join(HERE, "..", "..", "data")
+        root = os.path.join(HERE, "..", "..", "..", "data", "obsolete")
         paths = sorted(set(glob.glob(os.path.join(root, "gpu_microarch_specs*.csv")) + [os.environ.get("GPU_SPEC_SHEET", "")]) - {""})
         for p in paths:
             try:
@@ -295,22 +295,22 @@ def _is_trained(tgt):
 def route_predict(models, meta, samples, args):
     n = len(samples)
     inr = None; ia = args.inrange_artifact
-    if ia is None and os.path.realpath(args.artifact) == os.path.realpath(os.path.join(HERE, "v10_artifact")):
+    if ia is None and os.path.realpath(args.artifact) == os.path.realpath(os.path.join(HERE, "v322_artifact")):
         ia = None   # the in-range model is not shipped: routing is off unless --inrange-artifact is given
     if not args.no_route and ia and os.path.exists(os.path.join(ia, "meta.pkl")):
-        inr = v10_core.load(ia)
+        inr = v322_core.load(ia)
     known = np.array([inr is not None and _is_trained(s["tgt_gpu"]) for s in samples], dtype=bool)
     if not known.any():
-        return v10_core.predict_seeds(models, meta, samples), ["PINN v1.0"] * n
+        return v322_core.predict_seeds(models, meta, samples), ["PINN v3.22"] * n
     parts = {}
     saved = {k: os.environ.pop(k, None) for k in ("TRUST_Z", "TRUST_MODE")}   # in-range: no cap
     try:
-        parts[True] = v10_core.predict_seeds(inr[0], inr[1], [s for s, k in zip(samples, known) if k])
+        parts[True] = v322_core.predict_seeds(inr[0], inr[1], [s for s, k in zip(samples, known) if k])
     finally:
         for k, v in saved.items():
             if v is not None: os.environ[k] = v
     if (~known).any():
-        parts[False] = v10_core.predict_seeds(models, meta, [s for s, k in zip(samples, known) if not k])
+        parts[False] = v322_core.predict_seeds(models, meta, [s for s, k in zip(samples, known) if not k])
     R = {}
     for key in parts[True]:
         a = np.asarray(parts[True][key])
@@ -325,18 +325,18 @@ def route_predict(models, meta, samples, args):
         else:
             raise KeyError(f"router: unknown predict_seeds output {key!r}")
         R[key] = out
-    return R, ["PINN v1.0-inrange" if k else "PINN v1.0" for k in known]
+    return R, ["PINN v1.0-inrange" if k else "PINN v3.22" for k in known]
 
 
 def main():
     ap = argparse.ArgumentParser(
         description="v3 cross-GPU kernel estimator (no-ET NN + confidence). Two input modes: "
                     "(1) full input via CLI options, or (2) --csv FILE [--row N].")
-    ap.add_argument("--artifact", default=os.path.join(HERE, "v10_artifact"))   # weights of the internal v3.21 production run (3 seeds)
+    ap.add_argument("--artifact", default=os.path.join(HERE, "v322_artifact"))   # weights of the internal v3.21 production run (3 seeds)
     ap.add_argument("--inrange-artifact", default=None,
                     help="v3.17-recipe artifact (no spec dropout) used for TARGET GPUs that are in the "
-                         "training set. Default: v10_inrange_artifact, but ONLY when --artifact is the "
-                         "production v10_artifact -- a LOGO fold artifact is never routed (the in-range "
+                         "training set. Default: v322_inrange_artifact, but ONLY when --artifact is the "
+                         "production v322_artifact -- a LOGO fold artifact is never routed (the in-range "
                          "model has seen the held-out GPU, which would leak). See ROUTER below.")
     ap.add_argument("--no-route", action="store_true", help="use --artifact for every row")
     ap.add_argument("--out", required=True)
@@ -362,7 +362,7 @@ def main():
         m1.add_argument(_flag(c), dest=_dest(c), metavar="V", help=c)
     args = ap.parse_args()
 
-    models, meta = v10_core.load(args.artifact)
+    models, meta = v322_core.load(args.artifact)
     reg_out, brk_out = meta["reg_out"], meta["brk_out"]
     # sources the pipeline has datasheet values for (src SM count / DRAM latency for the latency floor).
     # v3.18 trains on H200 / GH200 / L40S as sources too, so they are valid here (2026-10-09).
@@ -409,7 +409,7 @@ def main():
     for r, how in zip(out_rows, routed): r["model_used"] = how
     cols_extra = []
     if args.confidence or args.truth:
-        C = v10_core.confidence(R, samples)
+        C = v322_core.confidence(R, samples)
         for i, r in enumerate(out_rows):
             for k in ("ExecTime", "Mem%", "Occupancy", "breakdown"):
                 r[f"conf_{k}"] = C[f"conf_{k}"][i]
@@ -422,9 +422,9 @@ def main():
                       + ["ens_cv_et", "ens_sd_mem", "ens_sd_occ", "ens_sd_brk",
                          "eta", "eta_violation", "log_dist_roof", "mem_consistency"])
     if args.truth:
-        cols_extra += v10_core.attach_errors(out_rows, args.truth)
+        cols_extra += v322_core.attach_errors(out_rows, args.truth)
     if args.confidence:
-        v10_core.print_confidence_legend()
+        v322_core.print_confidence_legend()
         import collections as _c
         sys.stderr.write("\nconfidence of THIS run:\n")
         for _k in ("ExecTime", "Mem%", "Occupancy", "breakdown"):
@@ -444,7 +444,7 @@ def main():
 
     if args.dump_records:
         n = core.dump_records(args.dump_records, "v3", samples, out_rows,
-                              v10_core._features, core.DERIVED_NAMES_V40, args.no_comments)
+                              v322_core._features, core.DERIVED_NAMES_V40, args.no_comments)
         sys.stderr.write(f"records  : {n} rows -> {args.dump_records}\n")
 
     log = [f"v3 cross-GPU estimator (no-ET NN + confidence)  run @ {datetime.datetime.now().isoformat(timespec='seconds')}",

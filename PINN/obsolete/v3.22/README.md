@@ -1,17 +1,19 @@
 # PINN v1.0: physics-informed cross-GPU kernel performance estimator (release 2026-10-16)
 
-Same task, inputs and outputs as MLP-NN v4.46 (`MLP_NN/v4.46/README.md`): one CUDA kernel profiled on a source
+> **Obsolete (2026-10-21)**: superseded by PINN/v3.25. Released 2026-10-16 as PINN/v1.0 (= internal v3.22); kept runnable here.
+
+Same task, inputs and outputs as MLP-NN v4.46 (`MLP_NN/obsolete/v4.46/README.md`): one CUDA kernel profiled on a source
 GPU, predicted on a real or hypothetical target GPU. The difference is training: the network is also trained against
 three physics laws.
 
 PINN v1.0 is the first public PINN release: the internal v3.22 inference code with the weights of the internal v3.21
-production training run (`v10_artifact/`, 3 seeds). The inference code includes the physics-guarded handling of
+production training run (`v322_artifact/`, 3 seeds). The inference code includes the physics-guarded handling of
 distant GPU specs shared with MLP-NN v4.46.
 
 ## Run
 
 ```
-python PINN/v1.0/predict_v10.py --csv inputs.csv --row all --out predictions.csv
+python PINN/obsolete/v3.22/predict_v322.py --csv inputs.csv --row all --out predictions.csv
 ```
 
 Options as in MLP-NN v4.46 (`--row`, `--confidence`, `--artifact`, `--runtime-inputs`). The separate in-range model
@@ -32,7 +34,7 @@ predictions (weight 0.5 against the data loss, from epoch 20):
 
 ## Spec sheet and runtime inputs
 
-As in MLP-NN v4.46: `data/gpu_microarch_specs_v3.csv` holds specs only; `runtime_inputs_training.csv` in this folder
+As in MLP-NN v4.46: `data/obsolete/gpu_microarch_specs_v3.csv` holds specs only; `runtime_inputs_training.csv` in this folder
 holds the actual values the model was trained with; `--runtime-inputs FILE` applies your own on top.
 
 ## Accuracy

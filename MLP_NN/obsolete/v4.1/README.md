@@ -1,4 +1,4 @@
-> **Obsolete (2026-10-16)**: superseded by MLP_NN/v4.46 and PINN/v1.0. Kept unchanged for reference; run it from `MLP_NN/obsolete/v4.1/`.
+> **Obsolete (2026-10-16)**: superseded by MLP_NN/v4.55 and PINN/v3.25. Kept unchanged for reference; run it from `MLP_NN/obsolete/v4.1/`.
 
 # v4.1 -- cross-GPU CUDA kernel performance estimator (no-ET NN + single-axis trends)
 

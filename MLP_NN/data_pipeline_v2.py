@@ -252,6 +252,13 @@ INST_ANCHOR = INST_ANCHOR_MODE == "1"
 # Applied to the FLOOR ONLY, never to the derived features (same lesson as INST_ANCHOR).
 LAT_ANCHOR = os.environ.get("LAT_ANCHOR", "0") == "1"
 LAT_ANCHOR_C = float(os.environ.get("LAT_ANCHOR_C", "0.25"))
+# LAT_CLOCK (2026-10-17, v4.49 experiment): latency-bound time is partly DRAM latency (ns, clock-free) and partly SM
+# pipeline cycles (scale with 1/clock). The floor scaled by the DRAM-latency ratio only, so the clock reached latency-class
+# kernels (no flops) only indirectly; held-out bias of that class rose with the target clock (GB200 1.09 GHz 0.66 ...
+# L40S 2.52 GHz 1.52). LAT_CLOCK=1: ratio = a * lat_tgt/lat_src + (1-a) * f_src_ncu/f_tgt_operating, a = LAT_CLOCK_ALPHA
+# (fitted by the trainer on the fold's own training pairs, LAT_CLOCK_FIT=1). Missing clock -> DRAM-latency ratio only.
+LAT_CLOCK = os.environ.get("LAT_CLOCK", "0") == "1"
+LAT_CLOCK_ALPHA = float(os.environ.get("LAT_CLOCK_ALPHA", "1.0"))
 # WAVE_ANCHOR (2026-10-15): one-wave floor. A kernel with a FIXED grid cannot finish faster than one wave of its
 # own blocks on the target, however many SMs the target has (strong scaling). 38% of the 17-app kernels have < 2
 # waves on H200 and 49% < 32, so the x16-x32 dummy projections were above the physical ceiling for them.
@@ -291,7 +298,77 @@ def t_lat_of(s, fp=1.0):
     v = [et, ls, lt, ss, st]
     if not all(x == x and x > 0 for x in v):
         return 0.0
-    return LAT_ANCHOR_C * et * 1e-9 * (lt / ls) * (ss / st) / fp
+    rl = lt / ls
+    if LAT_CLOCK:
+        fs, ft = s.get("src_clock_ncu", np.nan), s.get("target_clock_op", np.nan)
+        if fs == fs and ft == ft and fs > 0 and ft > 0:
+            rl = LAT_CLOCK_ALPHA * rl + (1.0 - LAT_CLOCK_ALPHA) * fs / ft
+    return LAT_ANCHOR_C * et * 1e-9 * rl * (ss / st) / fp
+
+
+# AT_BUSY_SMS (2026-10-18, inference only, default off): per-SM DRAM bandwidth over the SMs the kernel can occupy,
+# min(n_SMs, grid blocks), not over all SMs. A 256-block kernel on 600 SMs leaves 344 idle; dividing the bandwidth by
+# 600 made a bigger GPU at the same bandwidth look slower (histogram on the GB200-base sheet: F-GPU4 1.5x F-GPU1).
+# Used in t_wave_of (per-SM bandwidth ratio) and the Little's-law D of far_factors / mem_eff_shift.
+AT_BUSY_MODE = os.environ.get("AT_BUSY_SMS", "0")    # "1" hypothetical targets only, "2" every target (trained with it)
+AT_BUSY_SMS = AT_BUSY_MODE in ("1", "2")
+# tuning knobs (2026-10-19 sweep; defaults = the 10-18 rule): AT_BUSY_BETA blends n_SMs -> busy SMs as n x (busy/n)^beta;
+# AT_BUSY_USE picks the terms it enters (wave = t_wave_of, mem = mem_eff_shift, far = far_factors);
+# AT_BUSY_CAP = bytes one SM keeps in flight for the per-SM bandwidth cap in t_wave_of (default AT_D_HI).
+AT_BUSY_BETA = float(os.environ.get("AT_BUSY_BETA", "1"))
+AT_BUSY_FORM = os.environ.get("AT_BUSY_FORM", "sym")   # "tgt": target side only, n_tgt -> min(n_tgt, max(grid, n_src))
+AT_BUSY_USE = set(os.environ.get("AT_BUSY_USE", "wave,mem,far").split(","))
+
+
+_BUSY_FORCE = None   # busy_feats() evaluates the rule with it forced on
+
+
+def busy_on(s):
+    """AT_BUSY_SMS applies to HYPOTHETICAL targets only (tgt_gpu not a real GPU of the tables), like AT_REFCAP / AT_CLAMP.
+    Real targets keep the floor the networks were trained with: on the held-out folds the global version cost 2-4
+    points (in-sample 14.4 -> 16.8 PINN, 13.1 -> 15.2 MLP-NN; B300 24.3 -> 27.1 / 29.1 -> 33.2)."""
+    if _BUSY_FORCE is not None:
+        return _BUSY_FORCE
+    if AT_BUSY_MODE == "2":
+        return True
+    tg = str(s.get("tgt_gpu", "")).lower()
+    return AT_BUSY_SMS and not (tg in GPU_HW_FALLBACK and tg in GPU_PEAK_SPECS)
+
+
+def busy_sms(s, n, on=None, other=None):
+    """SMs a kernel can occupy: min(n, source grid) when busy_on (or `on`), else n (also when the grid is unknown)."""
+    if not (busy_on(s) if on is None else on):
+        return n
+    g = s.get("src_grid", np.nan)
+    try:
+        g = float(g)
+    except (TypeError, ValueError):
+        return n
+    if not (g == g and g >= 1 and n == n and n > 0):
+        return n
+    if AT_BUSY_FORM == "tgt":   # SMs beyond both the grid and the source/reference GPU idle; never fewer than the other side
+        return n if other is None or not (other == other and other > 0) else min(float(n), max(g, float(other)))
+    return float(n) * (min(float(n), g) / float(n)) ** AT_BUSY_BETA
+
+
+# BUSY_FEAT=1 (2026-10-19): the busy-SM rule as network INPUTS instead of a change to the floor (the floor keeps n_SMs):
+# log(busy/n) on the target and the source, and log(t_wave with the rule / t_wave without). The net learns when it applies.
+BUSY_FEAT = os.environ.get("BUSY_FEAT", "0") == "1"
+
+
+def busy_feats(s):
+    global _BUSY_FORCE
+    sg, tg = str(s.get("src_gpu", "")).lower(), str(s.get("tgt_gpu", "")).lower()
+    ns = s.get("src_n_sms", np.nan); ns = ns if ns == ns else GPU_HW_FALLBACK.get(sg, {}).get("n_sms", np.nan)
+    nt = s.get("target_n_sms", np.nan); nt = nt if nt == nt else GPU_HW_FALLBACK.get(tg, {}).get("n_sms", np.nan)
+    try:
+        _BUSY_FORCE = True; bt, bs, w1 = busy_sms(s, nt), busy_sms(s, ns), t_wave_of(s)
+        _BUSY_FORCE = False; w0 = t_wave_of(s)
+    finally:
+        _BUSY_FORCE = None
+    with np.errstate(divide="ignore", invalid="ignore"):
+        v = [np.log(bt / nt), np.log(bs / ns), np.log(w1 / w0) if (w0 > 0 and w1 > 0) else 0.0]
+    return [float(x) if np.isfinite(x) else np.nan for x in v]
 
 
 def t_wave_of(s):
@@ -320,7 +397,20 @@ def t_wave_of(s):
         if not all(x == x and np.isfinite(x) and x > 0 for x in v):
             return 1.0
         return (a / ss) / (b / st)
-    r = min(ratio(pis, pit), ratio(bws, bwt))
+    rb = ratio(bws, bwt)
+    if busy_on(s) and "wave" in AT_BUSY_USE and rb != 1.0:
+        # per busy SM, capped at what one SM can keep in flight: AT_D_HI bytes / DRAM latency (the far answer's
+        # Little's-law ceiling, 2x the largest measured on a real GPU; 44 KB / 440 ns = 100 GB/s per SM). Without the
+        # cap a 40-block kernel got bandwidth / 40 per SM and up to 10x speed-ups on a 10x-bandwidth part.
+        _dhi = float(os.environ.get("AT_BUSY_CAP", os.environ.get("AT_D_HI", "44000")))
+        _ls, _lt = s.get("src_dram_latency", np.nan), s.get("target_dram_latency", np.nan)
+        _lt = _lt if (_lt == _lt and _lt > 0) else _ls
+        def _pbw(bw, n, lat, other=None):
+            v = bw / busy_sms(s, n, other=other)
+            return min(v, _dhi / (lat * 1e-9)) if (lat == lat and lat > 0) else v
+        if all(x == x and np.isfinite(x) and x > 0 for x in (bws, bwt, ss, st)):
+            rb = _pbw(bws, ss, _ls) / _pbw(bwt, st, _lt, other=ss)
+    r = min(ratio(pis, pit), rb)
     return WAVE_ANCHOR_C * et * 1e-9 / max(float(w), 1.0) * r
 
 
@@ -419,7 +509,7 @@ def _load_spec_sheet_overrides():
     # the sheet, in order, cell by cell (empty cells ignored). They carry ACTUAL values that are not specs -- operating
     # clocks, achievable bandwidths, latency estimates -- so the spec sheet itself holds datasheet values only.
     path = os.environ.get("GPU_SPEC_SHEET") or os.path.join(os.path.dirname(__file__), os.pardir,
-                                                            "data", "gpu_microarch_specs_v3.csv")
+                                                            "data", "gpu_microarch_specs.csv")
     if not os.path.exists(path):
         return  # keep hardcoded fallback if the sheet is unavailable
     rows = {}
@@ -561,6 +651,14 @@ STALL_BREAKDOWN_GROUPS = {
         "Stall Misc [inst]",
     ],
 }
+
+# BRK_RUNNING=1 (2026-10-18): 5th bucket "running" = ncu's Selected state. The stall columns are warp cycles per ISSUED
+# instruction and Selected is exactly 1 per issued instruction (verified on every GPU: WCPI - sum of stalls = 1.00), so the
+# bucket is the constant 1.0 and the breakdown then splits ALL warp cycles (running share = 1 / WCPI). Changes the
+# breakdown head to 5 outputs; artifacts record it in meta["brk_running"].
+BRK_RUNNING = os.environ.get("BRK_RUNNING", "0") == "1"
+if BRK_RUNNING:
+    STALL_BREAKDOWN_GROUPS["running"] = []          # filled with 1.0 in compute_breakdown
 
 # Features that should be log1p-transformed where used (heavy-tailed).
 LOG_FEATURE_SUBSTRINGS = (
@@ -783,6 +881,9 @@ def compute_breakdown(row: pd.Series) -> np.ndarray:
     cats = list(STALL_BREAKDOWN_GROUPS.keys())
     sums = np.empty(len(cats), dtype=np.float64)
     for i, cat in enumerate(cats):
+        if cat == "running":
+            sums[i] = np.nan                  # set below, only when the stall columns exist
+            continue
         vals = []
         for n in STALL_BREAKDOWN_GROUPS[cat]:
             try:
@@ -792,6 +893,8 @@ def compute_breakdown(row: pd.Series) -> np.ndarray:
             except Exception:
                 pass
         sums[i] = float(np.sum(vals)) if vals else np.nan
+    if "running" in cats and np.isfinite(sums).any():
+        sums[cats.index("running")] = 1.0     # Selected: 1 cycle per issued instruction
     total = np.nansum(sums)
     if not (total > 0):
         return np.full(len(cats), np.nan, dtype=np.float64)
@@ -824,8 +927,11 @@ def _roofline_terms(src_row, src_gpu, tgt_gpu):
         # LAT_ANCHOR ingredients (see t_lat_of); NaN stays NaN -> the floor is simply 0
         "src_dur_ns": dur_ns, "src_mem_pct": g("Memory Throughput [%]"),
         "src_waves": g("Waves Per SM"),                            # WAVE_ANCHOR ingredient (see t_wave_of)
+        "src_grid": g("Grid Size"),                                # AT_BUSY_SMS ingredient (2026-10-18)
         "src_dram_latency": GPU_LATENCY_BW_SPECS.get(sg, {}).get("dram_latency_ns", np.nan),
         "target_dram_latency": GPU_LATENCY_BW_SPECS.get(t, {}).get("dram_latency_ns", np.nan),
+        "src_clock_ncu": (GPU_CLOCKS.get(sg, {}).get("ncu") or np.nan),          # LAT_CLOCK ingredients (2026-10-17)
+        "target_clock_op": (GPU_CLOCKS.get(t, {}).get("operating") or np.nan),
         "src_n_sms": GPU_HW_FALLBACK.get(sg, {}).get("n_sms", np.nan),
         "target_n_sms": GPU_HW_FALLBACK.get(t, {}).get("n_sms", np.nan),
         "roofline_inst": inst if inst == inst else 0.0,          # warp-inst
@@ -936,7 +1042,8 @@ def mem_eff_shift(s_tgt, s_ref):
         tc = float(tcomp_anchor(f32, f64, inst, float(s_tgt["target_peak_fp32"]), float(s_tgt["target_peak_fp64"]), float(s_tgt.get("target_peak_inst", np.nan))))
         to = max(tc, float(t_lat_of(s_tgt)), 1e-30)
         m = 1.0 / (1.0 + np.exp(-np.log(max(tm, 1e-30) / to) / 0.5))
-        dt, dr = bt / nt * lt, br / nr * lr
+        _on = busy_on(s_tgt) and "mem" in AT_BUSY_USE                                                     # AT_BUSY_SMS (2026-10-18): the TARGET decides, for both D
+        dt, dr = bt / busy_sms(s_tgt, nt, _on, other=nr) * lt, br / busy_sms(s_ref, nr, _on) * lr
         if not (np.isfinite(dt) and np.isfinite(dr) and dt > 0 and dr > 0 and np.isfinite(m)):
             return 0.0
         return AT_MEM_BETA * m * float(np.log(dt / dr))
@@ -963,7 +1070,8 @@ def far_factors(s_tgt, s_ref, troof_ref_ns):
         inst = float(s_tgt.get("roofline_inst", 0) or 0); pit = float(s_tgt.get("target_peak_inst", np.nan))
         tc = float(tcomp_anchor(f32, f64, inst, float(s_tgt["target_peak_fp32"]), float(s_tgt["target_peak_fp64"]), pit))
         trest = float(troof_floor(0.0, tc, inst, pit, f32, f64, t_lat_of(s_tgt), t_wave_of(s_tgt))) * 1e9
-        dt, dr = bt / nt * lt, br / nr * lr
+        _on = busy_on(s_tgt) and "far" in AT_BUSY_USE                                                     # AT_BUSY_SMS (2026-10-18): the TARGET decides, for both D
+        dt, dr = bt / busy_sms(s_tgt, nt, _on, other=nr) * lt, br / busy_sms(s_ref, nr, _on) * lr
         v = [bt, br, dt, dr, b, trest, troof_ref_ns]
         if not all(np.isfinite(x) and x > 0 for x in v):
             return None
@@ -1046,6 +1154,23 @@ def axis_weight(samples, exclude=()):
         # (32x-bandwidth H200 -> B300 efficiency) and broke continuity.
         tg = str(s.get("tgt_gpu", "")).lower()
         near[i] = tg if (tg in GPU_HW_FALLBACK and tg in GPU_PEAK_SPECS) else (os.environ.get("AT_BASE", "").lower() or names[k])
+        # AT_HELDOUT_REF=1 (2026-10-17): a real GPU the weights were NOT trained on (the held-out GPU of a LOGO fold) gets
+        # the same treatment as any unseen GPU: reference = nearest TRAINING GPU, not itself (itself = the network's own
+        # extrapolation, which made the far-field rule a no-op: L40S, 6 GB/s per SM vs 19-53 in training).
+        if os.environ.get("AT_HELDOUT_REF", "0") == "1" and tg in ex and tg != "gb10":
+            # distance WITHOUT the FP32/FP64 coordinate: the networks already apply the FP64 peak per kernel (FP64-free
+            # kernels do not move with it, tested 2026-10-17), so a 1:64 part (B300) is not "far" for that reason alone
+            dh = np.max(np.abs(pts[:, :3] - bt[None, :3]), axis=1); kh = int(np.argmin(dh)); dkh = dh[kh]
+            if _size:
+                try:
+                    _nt = float(s["target_n_sms"])
+                    if np.isfinite(_nt) and _nt > 0:
+                        dkh = max(dkh, np.log(_nt / _nhi), np.log(_nlo / _nt))
+                except (KeyError, TypeError, ValueError):
+                    pass
+            _wh = float(np.clip((AT_D1 - dkh) / max(AT_D1 - AT_D0, 1e-9), 0.0, 1.0))
+            if _wh < 1.0:                    # only a GPU that is really FAR from every training GPU is redirected;
+                w[i] = _wh; near[i] = names[kh]   # a near one (B300 ~ GB200) keeps the original path exactly
     return w, near
 
 
