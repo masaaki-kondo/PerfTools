@@ -1,5 +1,7 @@
 # MLP-NN v4.46: cross-GPU kernel performance estimator (release 2026-10-16)
 
+> **Obsolete (2026-10-21)**: superseded by MLP_NN/v4.55. Previous release (2026-10-16); kept runnable here (`python MLP_NN/obsolete/v4.46/predict_v446.py`).
+
 Predicts, for one CUDA kernel profiled on a **source** GPU, its execution time, memory throughput, occupancy and
 stall-cycle breakdown on a **target** GPU: a real GPU or a hypothetical one described by its specs.
 
