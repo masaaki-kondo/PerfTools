@@ -60,7 +60,7 @@ MODELS = {"mlpnn": ("MLP_NN/mlp-nn.py", "MLP_NN/v4.55"),   # MLP-NN v4.55
 # ARCH = the 5 NCU-architectural spec inputs (warps per scheduler, active warps per SM / per scheduler, shared-memory
 # configuration size, block limit warps) at their representative values: the per-GPU medians over the GPU's ncu
 # profiles, which every reported accuracy uses (= max_warps_per_scheduler, max_warps_per_sm, 32 KB / 16 KB, warps / 8;
-# see examples/prepare_data.py). Training itself uses each kernel's own values.
+# see examples/kernel_inputs/prepare_data.py). Training itself uses each kernel's own values.
 ARCH = {"A100": (16, 64, 16, 32768, 8), "H100": (16, 64, 16, 32768, 8), "H200": (16, 64, 16, 32768, 8),
         "GH200": (16, 64, 16, 32768, 8), "GB200": (16, 64, 16, 32768, 8), "L40S": (12, 48, 12, 16384, 6)}
 
@@ -174,7 +174,7 @@ def read_nsys(path):
 # ----------------------------------------------------------------------------------------------------------------- #
 def base_specs(dp, gpu, ncu):
     """SRC spec columns of the base GPU (also the TGT columns of the 1x reference), from the model's own GPU tables.
-    Mirrors examples/prepare_data.spec_vector."""
+    Mirrors spec_features in examples/kernel_inputs/prepare_data.py."""
     g = gpu.lower(); hw, pk, lb = dp.GPU_HW_FALLBACK[g], dp.GPU_PEAK_SPECS[g], dp.GPU_LATENCY_BW_SPECS[g]
     nsm = pd.to_numeric(ncu.get("# SMs [SM]", pd.Series(dtype=float)), errors="coerce").dropna()
     nsm = float(nsm.iloc[0]) if len(nsm) else hw["n_sms"]     # SMs as the profile saw them, else the table's

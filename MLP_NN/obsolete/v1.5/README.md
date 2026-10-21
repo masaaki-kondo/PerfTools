@@ -1,4 +1,4 @@
-> **Obsolete (2026-10-16)**: its input builder (`prepare_data.py --raw ... --n`) is no longer shipped; examples/prepare_data.py builds inputs for the current models.
+> **Obsolete (2026-10-16)**: its input builder (`prepare_data.py --raw ... --n`) is no longer shipped; examples/kernel_inputs/prepare_data.py builds inputs for the current models.
 > superseded by MLP-NN v4.55 (`MLP_NN/`) and PINN v3.25 (`PINN/`). Kept unchanged for reference; run its commands from the repository root.
 
 # Cross-GPU CUDA Kernel Performance Estimator (v1.5)
@@ -15,7 +15,7 @@ neural-network model (v1.5 = multi-branch MLP + roofline-derived input features)
 
 ```bash
 python MLP_NN/obsolete/v1.5/predict_v15.py \
-    --csv examples/kernel_inputs.csv \
+    --csv examples/kernel_inputs/kernel_inputs.csv \
     --row all --out pred.csv --log run.log
 ```
 
@@ -71,7 +71,7 @@ python prepare_data.py --raw data/<your_ncu_wide>.zip --n 20
 It reads the NCU columns from the export and fills the `SRC `/`TGT ` spec columns
 from the spec sheet (`data/gpu_microarch_specs.csv`). **Note:** the raw NCU export
 (Yoshida-san's profiling data) is large and is **not included in `/data`** — place
-the wide zip there first. The shipped `examples/kernel_inputs.csv` was
+the wide zip there first. The shipped `examples/kernel_inputs/kernel_inputs.csv` was
 built this way.
 
 ## Input columns (what each row needs)

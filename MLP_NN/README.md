@@ -13,7 +13,7 @@ the 2026-10-16 release).
 ## Quick start
 
 ```
-python examples/prepare_data.py --ncu <ncu files or folders> --src H200 --tgt H100,GB200 --out inputs.csv
+python examples/kernel_inputs/prepare_data.py --ncu <ncu files or folders> --src H200 --tgt H100,GB200 --out inputs.csv
 python MLP_NN/mlp-nn.py --csv inputs.csv --row all --out predictions.csv
 ```
 
@@ -23,7 +23,7 @@ For a whole application run on one GPU, see `examples/predict_app.py`.
 
 ## Inputs
 
-One row per kernel (and target GPU), same columns as `examples/kernel_inputs.csv`:
+One row per kernel (and target GPU), same columns as `examples/kernel_inputs/kernel_inputs.csv`:
 
 - `src_gpu`, `tgt_gpu`: GPU names (columns of the spec sheet), or any name for a hypothetical target.
   `src_gpu` must be a GPU with ncu profiles: A100, H100, H200, GH200, GB200, GB10, L40S, H100_MIG_1g/2g/4g.
@@ -32,7 +32,7 @@ One row per kernel (and target GPU), same columns as `examples/kernel_inputs.csv
   These are the kernel's actual measurements on the source GPU.
 - `SRC ...` / `TGT ...` GPU spec columns, `TGT peak_*` columns, and `TGT n_sms` for a GPU the predictor does not know.
 
-Build the CSV with `examples/prepare_data.py`. It reads Yoshida-san's raw long-form ncu-full files or wide
+Build the CSV with `examples/kernel_inputs/prepare_data.py`. It reads Yoshida-san's raw long-form ncu-full files or wide
 CSVs; `--src`, `--tgt` choose the GPUs, `--target-specs FILE` describes a GPU that is not in the spec sheet,
 `--runtime-inputs FILE` adds actual values, `--smem-config` sets the shared-memory configuration for a new SM design.
 

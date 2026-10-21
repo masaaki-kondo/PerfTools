@@ -17,7 +17,7 @@ neither, use **v4.0** (the shipped model).
 ## Quick start
 ```
 python MLP_NN/obsolete/v2.1/predict_v21.py \
-       --csv examples/kernel_inputs.csv --row all --out pred.csv
+       --csv examples/kernel_inputs/kernel_inputs.csv --row all --out pred.csv
 ```
 
 ## What it predicts (per kernel)
@@ -72,7 +72,7 @@ out-of-range path.
 ```
 python prepare_data.py --src A100,H100,GB200 --n N --out my.csv   # old builder, not shipped
 ```
-`examples/kernel_inputs.csv` (all 147 kernels) is provided ready to use.
+`examples/kernel_inputs/kernel_inputs.csv` (all 147 kernels) is provided ready to use.
 
 ## Input columns (79 per row)
 - metadata: `Kernel Name`, `src_gpu`, `tgt_gpu`

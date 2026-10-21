@@ -11,6 +11,8 @@ sm_clock_boost,GHz,1.98,1.98,1.98,1.98,1.98,defined: = H200 (fixed),make_dummy_g
 l1_shmem_combined_per_sm,KB,256,256,256,256,256,"inherited from GH100 (Hopper SM, unchanged)",H100/H200 column
 l2_cache_total,MB,100,200,400,800,1600,defined: H200 x 2^gen,make_dummy_gens.py (2026-09-18)
 shmem_per_sm_max,KB,228,228,228,228,228,"inherited from GH100 (Hopper SM, unchanged)",H100/H200 column
+max_warps_per_scheduler,warp,16,16,16,16,16,"inherited from GH100 (Hopper SM, unchanged)",H100/H200 column
+max_warps_per_sm,warp,64,64,64,64,64,"inherited from GH100 (Hopper SM, unchanged)",H100/H200 column
 l1_latency,cycles,40.7,40.7,40.7,40.7,40.7,"= H200 (same clock, same SM, same memory tech)",H200 column of gpu_microarch_specs_v3.csv
 l1_latency,ns,23.2,23.2,23.2,23.2,23.2,"= H200 (same clock, same SM, same memory tech)",H200 column of gpu_microarch_specs_v3.csv
 l2_latency,cycles,263,263,263,263,263,"= H200 (same clock, same SM, same memory tech)",H200 column of gpu_microarch_specs_v3.csv

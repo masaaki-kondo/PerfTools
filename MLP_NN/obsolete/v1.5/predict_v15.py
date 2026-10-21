@@ -7,7 +7,7 @@ TWO INPUT MODES (every input is supplied; no hidden lookups):
   1. full input via CLI options — one prediction, every column is a flag.
   2. --csv FILE --row {N|all} — a CSV (NCU + SRC/TGT spec columns per row);
      --row is REQUIRED: a 1-based data row, or 'all' for every row.
-  Build a CSV from raw NCU + the spec sheet with examples/prepare_data.py.
+  Build a CSV from raw NCU + the spec sheet with examples/kernel_inputs/prepare_data.py.
 
 OUTPUT
   --out pred.csv   estimated metrics (+ roofline quantities) per kernel.
@@ -15,9 +15,9 @@ OUTPUT
 
 EXAMPLES
   python MLP_NN/v1.5/predict_v15.py \
-         --csv examples/kernel_inputs.csv --row all --out pred.csv
+         --csv examples/kernel_inputs/kernel_inputs.csv --row all --out pred.csv
   python MLP_NN/v1.5/predict_v15.py \
-         --csv examples/kernel_inputs.csv --row 3 --out row3.csv
+         --csv examples/kernel_inputs/kernel_inputs.csv --row 3 --out row3.csv
 """
 import os, sys, csv, re, json, pickle, argparse, datetime
 HERE = os.path.dirname(os.path.abspath(__file__))
@@ -215,7 +215,7 @@ def main():
             if spec is None:
                 ap.error("input is missing the GPU spec columns (SRC ... / TGT ... / TGT peak_*). "
                          "Every input must be supplied — in the CSV or as CLI options. "
-                         "Build a CSV with examples/prepare_data.py.")
+                         "Build a CSV with examples/kernel_inputs/prepare_data.py.")
             sv, tv, pk = spec
             sub.append(build_sample(row, sg, tg, sv, tv, pk, reg_out, brk_out))
         for i, r, smp in zip(idxs, to_rows(core.predict(model, stats, sub), sub), sub):

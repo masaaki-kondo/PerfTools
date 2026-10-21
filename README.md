@@ -23,7 +23,7 @@ physics laws (roofline floor, monotonicity, scaling law). Running both and compa
 Kernel prediction (one row per kernel and target GPU; the example holds kernels profiled on A100, H100 and GB200):
 
 ```
-python MLP_NN/mlp-nn.py --csv examples/kernel_inputs.csv --row all --confidence --out kernel_pred.csv
+python MLP_NN/mlp-nn.py --csv examples/kernel_inputs/kernel_inputs.csv --row all --confidence --out kernel_pred.csv
 ```
 
 Application prediction (one attention-cuda run profiled on H200, predicted on H100 and on a hypothetical H200 x 8):
@@ -37,7 +37,7 @@ python examples/predict_app.py --ncu examples/app_inputs/ncu/attention-cuda__894
     --specs data/dummy_gpu_specs_ship5.csv --gpu G3_8X --model mlpnn --out app_pred.csv
 ```
 
-Your own kernels: build the input CSV from ncu profiles with `examples/prepare_data.py`. Details in `examples/README.md`.
+Your own kernels: build the input CSV from ncu profiles with `examples/kernel_inputs/prepare_data.py`. Details in `examples/README.md`.
 
 ## Repository layout
 
@@ -46,7 +46,7 @@ Your own kernels: build the input CSV from ncu profiles with `examples/prepare_d
 | `LightGBM_model/` | LightGBM models (v1.0, v1.1) |
 | `MLP_NN/`, `PINN/` | current models: entry point (`MLP_NN/mlp-nn.py`, `PINN/pinn.py`), inference code, README |
 | `MLP_NN/v4.55/`, `PINN/v3.25/` | weights of the current versions, with the runtime inputs used in training |
-| `examples/` | example inputs (kernel and application), `prepare_data.py` (input CSV from your ncu profiles) and `predict_app.py` (one application run on one GPU); see `examples/README.md` |
+| `examples/` | `kernel_inputs/` (example kernel input, and `prepare_data.py` to build one from your ncu profiles), `app_inputs/` (example application run) and `predict_app.py` (one application run on one GPU); see `examples/README.md` |
 | `data/` | GPU spec sheets (latest: `data/v4/gpu_microarch_specs.csv`), hypothetical GPUs and older data; see `data/README.md` |
 | `MLP_NN/obsolete/`, `PINN/obsolete/` | earlier versions |
 

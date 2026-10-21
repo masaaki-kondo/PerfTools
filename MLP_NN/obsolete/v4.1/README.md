@@ -31,7 +31,7 @@ Honest scope of the change:
 ## Quick start
 ```
 python MLP_NN/obsolete/v4.1/predict_v41.py \
-       --csv examples/kernel_inputs.csv --row all --out pred.csv
+       --csv examples/kernel_inputs/kernel_inputs.csv --row all --out pred.csv
 ```
 
 ## What it predicts (per kernel)
@@ -69,7 +69,7 @@ counters from your real SOURCE profile:
 | `TGT peak_fp64`   | target FP64 peak [flop/s]        | 80e12                    |
 | `TGT <spec>` (13) | target spec features             | from datasheet           |
 
-Easiest path: copy one row of `examples/kernel_inputs.csv` for your kernel, overwrite the
+Easiest path: copy one row of `examples/kernel_inputs/kernel_inputs.csv` for your kernel, overwrite the
 `TGT ...` columns, and run `--row 1`. Or pass them as flags:
 ```
 python MLP_NN/obsolete/v4.1/predict_v41.py --csv one_kernel.csv --row 1 \
@@ -82,7 +82,7 @@ knob (e.g. more bandwidth, same compute) -- but see the honest scope note above.
 ```
 python prepare_data.py --src A100,H100,GB200 --n N --out my.csv   # old builder, not shipped
 ```
-`examples/kernel_inputs.csv` (all 147 kernels) is provided ready to use.
+`examples/kernel_inputs/kernel_inputs.csv` (all 147 kernels) is provided ready to use.
 
 ## Input columns (79 per row)
 - metadata: `Kernel Name`, `src_gpu`, `tgt_gpu`

@@ -13,7 +13,7 @@ inference code, so outputs differ slightly from the 2026-10-16 release).
 ## Quick start
 
 ```
-python examples/prepare_data.py --ncu <ncu files or folders> --src H200 --tgt H100,GB200 --out inputs.csv
+python examples/kernel_inputs/prepare_data.py --ncu <ncu files or folders> --src H200 --tgt H100,GB200 --out inputs.csv
 python PINN/pinn.py --csv inputs.csv --row all --out predictions.csv
 ```
 
@@ -22,7 +22,7 @@ Options as in MLP-NN v4.55 (`--row`, `--confidence`, `--artifact`, `--runtime-in
 
 ## Inputs, spec sheet and runtime inputs
 
-As in MLP-NN v4.55: one row per kernel built with `examples/prepare_data.py`; specs from
+As in MLP-NN v4.55: one row per kernel built with `examples/kernel_inputs/prepare_data.py`; specs from
 `data/v4/gpu_microarch_specs.csv` (datasheet values only); the actual values the model was trained with in
 `v3.25/runtime_inputs_training.csv` (in the weights folder); your own on top with `--runtime-inputs FILE`. `src_gpu` must be a GPU with
 ncu profiles; B300 and GH200_144GB are targets only.

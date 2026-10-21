@@ -6,12 +6,12 @@ stall breakdown on a TARGET GPU (a real GPU, or a hypothetical one described by 
 Lineage: PINN v3.25 = the v3.22 inference code with the weights of the v3.25 production run (3 seeds).
 
 INPUT   --csv FILE --row {N|all}: one row per kernel (ncu metrics + SRC/TGT spec columns), built with
-        examples/prepare_data.py; or every column as a CLI option (one prediction).
+        examples/kernel_inputs/prepare_data.py; or every column as a CLI option (one prediction).
         Specs come from data/v4/gpu_microarch_specs.csv; actual values (operating clocks, DRAM latency, ...) from
         runtime_inputs_training.csv in the weights folder (v3.25/), plus any --runtime-inputs FILE.
 OUTPUT  --out pred.csv: predicted metrics (+ roofline quantities) per kernel. --confidence adds confidence levels.
 
-    python PINN/pinn.py --csv examples/kernel_inputs.csv --row all --out pred.csv
+    python PINN/pinn.py --csv examples/kernel_inputs/kernel_inputs.csv --row all --out pred.csv
 """
 # RELEASE: default weights = v3.25/ in this folder (the v3.25 production run, 3 seeds). In-range routing is OFF.
 import os, sys, csv, re, pickle, argparse, datetime
@@ -141,7 +141,7 @@ def _is_unscaled(row, gpu, pfx):
             and near(TGT_PFX + "n_sms", hw["n_sms"])):
         return True
     # 2026-10-16: also the REAL GPU when the row carries the values of a published spec sheet for it (inputs built
-    # from data/gpu_microarch_specs*.csv, e.g. examples/kernel_inputs.csv: GB200 8000 GB/s vs the training 6580).
+    # from data/gpu_microarch_specs*.csv, e.g. examples/kernel_inputs/kernel_inputs.csv: GB200 8000 GB/s vs the training 6580).
     return any(near(TGT_PFX + "dram_bw", bw) and near(TGT_PFX + "peak_fp32", f32) and near(TGT_PFX + "n_sms", sms)
                for bw, f32, sms in _sheet_refs().get(g, []))
 
@@ -474,7 +474,7 @@ def main():
         if spec is None:
             ap.error("input is missing the GPU spec columns (SRC ... / TGT ... / TGT peak_*). "
                      "Every input must be supplied -- in the CSV or as CLI options. "
-                     "Build a CSV with examples/prepare_data.py.")
+                     "Build a CSV with examples/kernel_inputs/prepare_data.py.")
         sv, tv, pk = spec
         samples.append(build_sample(row, sg, tg, sv, tv, pk, reg_out, brk_out))
     R, routed = route_predict(models, meta, samples, args)

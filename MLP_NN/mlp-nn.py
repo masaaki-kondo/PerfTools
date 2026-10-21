@@ -6,12 +6,12 @@ stall breakdown on a TARGET GPU (a real GPU, or a hypothetical one described by 
 Lineage: MLP-NN v4.55 = the v4.46 inference code with the weights of the v4.55 production run (5 seeds).
 
 INPUT   --csv FILE --row {N|all}: one row per kernel (ncu metrics + SRC/TGT spec columns), built with
-        examples/prepare_data.py; or every column as a CLI option (one prediction).
+        examples/kernel_inputs/prepare_data.py; or every column as a CLI option (one prediction).
         Specs come from data/v4/gpu_microarch_specs.csv; actual values (operating clocks, DRAM latency, ...) from
         runtime_inputs_training.csv in the weights folder (v4.55/), plus any --runtime-inputs FILE.
 OUTPUT  --out pred.csv: predicted metrics (+ roofline quantities) per kernel. --confidence adds confidence levels.
 
-    python MLP_NN/mlp-nn.py --csv examples/kernel_inputs.csv --row all --out pred.csv
+    python MLP_NN/mlp-nn.py --csv examples/kernel_inputs/kernel_inputs.csv --row all --out pred.csv
 """
 import os, sys, csv, re, pickle, argparse, datetime
 # v4.5 adds Metro's L1/L2 cache HIT RATES to the workload features. The flag must be
@@ -133,7 +133,7 @@ def _is_unscaled(row, gpu, pfx):
             and near(TGT_PFX + "n_sms", hw["n_sms"])):
         return True
     # 2026-10-16: also the REAL GPU when the row carries the values of a published spec sheet for it (inputs built
-    # from data/gpu_microarch_specs*.csv, e.g. examples/kernel_inputs.csv: GB200 8000 GB/s vs the training 6580).
+    # from data/gpu_microarch_specs*.csv, e.g. examples/kernel_inputs/kernel_inputs.csv: GB200 8000 GB/s vs the training 6580).
     return any(near(TGT_PFX + "dram_bw", bw) and near(TGT_PFX + "peak_fp32", f32) and near(TGT_PFX + "n_sms", sms)
                for bw, f32, sms in _sheet_refs().get(g, []))
 
@@ -410,7 +410,7 @@ def main():
         if spec is None:
             ap.error("input is missing the GPU spec columns (SRC ... / TGT ... / TGT peak_*). "
                      "Every input must be supplied -- in the CSV or as CLI options. "
-                     "Build a CSV with examples/prepare_data.py.")
+                     "Build a CSV with examples/kernel_inputs/prepare_data.py.")
         sv, tv, pk = spec
         samples.append(build_sample(row, sg, tg, sv, tv, pk, reg_out, brk_out))
     R = mlpnn_core.predict_seeds(models, meta, samples)

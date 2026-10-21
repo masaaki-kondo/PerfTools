@@ -8,15 +8,15 @@ future GPU = a column of a file you pass with --target-specs).
 
 Usage
     # Yoshida-san's raw ncu-full files of one or more runs (files or folders), source H200, targets H100 and GB200
-    python examples/prepare_data.py --ncu <HeCBench>/H200/ncu-full/ace-cuda__f899139d.csv \
+    python examples/kernel_inputs/prepare_data.py --ncu <HeCBench>/H200/ncu-full/ace-cuda__f899139d.csv \
         --src H200 --tgt H100,GB200 --out inputs.csv
     # a GPU that is not in the spec sheet: its specs at runtime, same layout (spec,unit,<GPU column>)
-    python examples/prepare_data.py --ncu <files> --src H200 --tgt MyGPU --target-specs my_gpu.csv --out inputs.csv
+    python examples/kernel_inputs/prepare_data.py --ncu <files> --src H200 --tgt MyGPU --target-specs my_gpu.csv --out inputs.csv
     python MLP_NN/mlp-nn.py --csv inputs.csv --row all --out pred.csv
 
 ncu input: the long-form `ncu --csv` export (one row per kernel x metric; Yoshida-san's ncu-full files), or a wide CSV
-(one row per kernel). One row per kernel name is used: for a long-form
-file the FIRST value ncu reports for each (kernel, metric), as in the training data.
+(one row per kernel). One row per kernel name is used: for a long-form file the FIRST value ncu reports for each
+(kernel, metric), as in the training data.
 
 Spec features (SRC and TGT), 13 per GPU
     from the spec sheet (data/v4/gpu_microarch_specs.csv; rows with model_input = yes):
@@ -36,7 +36,7 @@ state the clock it will run at (peaks are scaled to it; default: the boost clock
 import argparse, glob, io, os, re, sys
 
 HERE = os.path.dirname(os.path.abspath(__file__))
-ROOT = os.path.dirname(HERE)
+ROOT = os.path.dirname(os.path.dirname(HERE))
 # flags that select the model's feature lists; must be set before network is imported
 os.environ.update(HITRATES="1", LOG_SPECS="0", DROP_C2C="0", LAT_ANCHOR="1", INST_ANCHOR="2")
 import numpy as np
