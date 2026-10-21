@@ -16,7 +16,7 @@ python MLP_NN/examples/prepare_data.py --ncu <ncu files or folders> --src H200 -
 python MLP_NN/v4.55/predict_v455.py --csv inputs.csv --row all --out predictions.csv
 ```
 
-`--row N` predicts one data row. `--confidence` adds per-output confidence estimates. `--artifact DIR` selects other
+`--row N` predicts one data row. `--confidence` adds per-output confidence levels and expected errors (see below). `--artifact DIR` selects other
 weights. `--runtime-inputs FILE` supplies your own actual GPU values (see below). Requires numpy, pandas, torch.
 For a whole application run on one GPU, see `extrapolate_app.py` in the repository root.
 
@@ -68,6 +68,46 @@ Per row:
 - Roofline floor `t_mem_ns`, `t_comp_ns`, `t_roof_ns`, `efficiency_eta` (= t_roof / predicted time), and `trust_w`
   (1 = target inside the trained spec envelope, < 1 = outside, prediction blended toward the physics anchor).
 - Optional: `PRED_SEED_TIMES=1` in the environment adds the per-seed times `et_seed0` ... `et_seed4`.
+
+## Confidence, errors and output files
+
+**Output files.** Every result is a CSV: the predictor writes one row per input row to `--out FILE` (a few `#` header
+lines first unless `--no-comments`); `prepare_data.py --out` writes the input CSV; `extrapolate_app.py --out` appends
+one row per call (application level).
+
+**Confidence (no measurement needed).** `--confidence` adds, per output (ExecTime, Mem%, Occupancy, breakdown),
+`conf_<output>` = `high` / `medium` / `low` and `exp_err_<output>` = the error to expect at that level, plus the raw
+signals (`ens_cv_et`, `ens_sd_*` = disagreement between the ensemble members; `eta`, `eta_violation`, `log_dist_roof`,
+`mem_consistency` = roofline checks; an execution time faster than the roofline is always `low`). The levels and errors are
+calibrated on held-out predictions: the 7 GPUs the model never saw (4,784 kernels for time; 3,877 with a measured target
+profile for the other outputs). Mean error per level:
+
+| Output | high | medium | low | unit |
+|---|---|---|---|---|
+| ExecTime | 19.3 | 18.2 | 29.3 | % (absolute percentage error) |
+| Mem% | 12.6 | 7.0 | 15.7 | percentage points |
+| Occupancy | 2.3 | 24.4 | 9.3 | percentage points |
+| breakdown | 1.3 | 14.5 | 7.2 | percentage points (mean over the 4 shares) |
+
+For this model the levels are informative only for Execution Time `low` (about 1.5x the error of the other levels);
+for Mem%, occupancy and breakdown the levels do not rank the error (Mem%: high is worse than medium; occupancy and
+breakdown: medium is worse than low). Use `exp_err_*`. `exp_err` is a typical (mean) error, not a guaranteed interval. The thresholds were set with the held-out models'
+signals and are applied unchanged to the production weights.
+
+**Spread of the ensemble.** `PRED_SEED_TIMES=1` adds each ensemble member's time (`et_seed<j>`).
+
+**Errors against measurements.** If the kernels were also measured on the target, `--truth FILE` (row-matched CSV with
+`S-Execution Time [ns]`, and optionally `S-Memory Throughput [%]`, `S-Achieved Occupancy`, `S-brk_*`) adds `err_ExecTime`, `err_Mem%`,
+`err_Occupancy` and `err_brk_<bucket>` (time as absolute % error, the rest in percentage points) and prints an error summary:
+
+    python MLP_NN/v4.55/predict_v455.py --csv inputs.csv --row all --truth measured.csv --confidence --out predictions.csv
+
+**Applications.** `extrapolate_app.py` (repository root) sums kernels x launches for one profiled run on one GPU and
+reports: the actual error on the base GPU; with `--target-nsys` (run measured on the target) `status = known` and the
+actual error there (`model_err_target_%`);
+for a target inside the trained range (`status = interpolated`) an 80% range `likely_target_ms_lo` / `_hi` from the
+held-out application errors; for a target beyond it (`status = extrapolated`) no calibrated range, only the seed spread
+(`*_seed_min` / `*_seed_max`).
 
 ## Accuracy
 

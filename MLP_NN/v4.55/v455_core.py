@@ -291,22 +291,21 @@ def predict_seeds(models, meta, samples, _no_transport=False):
 #   (b) ROOFLINE CONSISTENCY - does the answer obey physics, and how far does it sit
 #       from the roofline floor the model is anchored to
 #
-# CALIBRATION was measured FOR THIS ARTIFACT on the 2,535 measured A100/H100/GB200
-# kernel-pairs in MLP_NN/examples/*_from_Yoshida-san_20260522.csv, by binning rows into
-# signal quintiles and recording the ACTUAL error per bin (analyze_error_confidence.py).
-# Rank correlation signal-vs-error:
-#   stall breakdown +0.49 | ExecTime +0.34 | occupancy +0.28 | Mem% +0.27  (all positive)
-# So the signals genuinely order the errors.
+# CALIBRATION (2026-10-21) on HELD-OUT predictions of MLP-NN v4.55: the 7 leave-one-GPU-out folds (H200, H100, A100, GH200,
+# L40S, GB200, B300), i.e. GPUs the model never saw -- the situation of a user predicting a new GPU. 4,784 kernel rows
+# for Execution Time (truth: nsys / ncu time); 3,877 for Mem% / occupancy / breakdown (truth: the target GPU's own ncu
+# profile of the same run and kernel; B300 has none). Thresholds q60 / q80 of each signal over those rows.
+# Rank correlation signal-vs-error: ExecTime +0.14, Mem% +0.16, Occupancy +0.50, breakdown +0.68.
 #
 # Bucket = top 20% of the signal -> "low", next 20% -> "medium", rest -> "high".
-# `exp_err` is the MEASURED mean error of that bucket, i.e. what to actually expect.
-# NOTE: fitted in-sample; treat exp_err as indicative until a held-out calibration exists.
+# `exp_err` is the MEASURED mean held-out error of that bucket, i.e. what to expect on a GPU the model never saw.
+# Read exp_err, not only the label: where exp_err does not rise from high to low, the label does not rank the error.
 CONF_CAL = {
     #  signal                       q60        q80    exp_err(high, medium, low)   unit
-    "ExecTime":  dict(sig="ens_cv_et",  q60=0.04287, q80=0.06042, exp=(4.44, 5.21, 13.90), unit="%"),
-    "Mem%":      dict(sig="ens_sd_mem", q60=1.02620, q80=1.42634, exp=(0.92, 1.15, 2.69), unit="pp"),
-    "Occupancy": dict(sig="ens_sd_occ", q60=0.87811, q80=1.20292, exp=(0.85, 1.05, 3.38), unit="pp"),
-    "breakdown": dict(sig="ens_sd_brk", q60=0.38626, q80=0.66432, exp=(0.47, 1.09, 3.29), unit="pp"),
+    "ExecTime": dict(sig="ens_cv_et", q60=0.03914, q80=0.05951, exp=(19.28, 18.25, 29.32), unit="%"),
+    "Mem%": dict(sig="ens_sd_mem", q60=1.71242, q80=2.62276, exp=(12.59, 7.01, 15.7), unit="pp"),
+    "Occupancy": dict(sig="ens_sd_occ", q60=1.81224, q80=2.02451, exp=(2.31, 24.43, 9.34), unit="pp"),
+    "breakdown": dict(sig="ens_sd_brk", q60=0.77108, q80=0.90222, exp=(1.33, 14.51, 7.22), unit="pp"),
 }
 
 
@@ -430,12 +429,12 @@ CONF_LEGEND = [
     "",
     "Reported per output: conf_<output> = high | medium | low, and exp_err_<output> =",
     "the MEASURED mean error of that bucket (top 20% of the signal -> low, next 20% ->",
-    "medium, rest -> high). Calibrated on 2,535 measured A100/H100/GB200 kernel-pairs;",
-    "signal-vs-error rank correlation: breakdown +0.49, ExecTime +0.34, occupancy +0.28,",
-    "Mem% +0.27 -- 'low' carries 3-7x the error of 'high'.",
-    "Limits: thresholds are fitted IN-SAMPLE (exp_err is indicative, not a guaranteed",
-    "interval); ensemble variance measures seed disagreement, NOT correctness; the",
-    "calibration covers the A100/H100/GB200 regime only.",
+    "medium, rest -> high). Calibrated on HELD-OUT predictions (7 GPUs the model never",
+    "saw; 4,784 kernels for time, 3,877 for the others). Mean error high / medium / low: ExecTime 19.3 / 18.2 / 29.3 %,",
+    "Mem% 12.6 / 7.0 / 15.7 pp, occupancy 2.3 / 24.4 / 9.3 pp, breakdown 1.3 / 14.5 / 7.2 pp.",
+    "Use exp_err: where it does not rise from high to low, the label does not rank the",
+    "error. Ensemble variance measures seed disagreement, NOT correctness; exp_err is a",
+    "typical (mean) error, not a guaranteed interval.",
 ]
 
 

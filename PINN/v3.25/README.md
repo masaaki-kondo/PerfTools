@@ -42,6 +42,45 @@ During training, kernels are placed on a grid of hypothetical GPUs (DRAM bandwid
 3. **Scaling law**: time follows bandwidth^-a x compute^-b with a + b = 1 (whole-GPU scaling exact); the exponents
    depend on what limits the kernel (bandwidth-, memory-latency- or compute-bound).
 
+## Confidence, errors and output files
+
+**Output files.** Every result is a CSV: the predictor writes one row per input row to `--out FILE` (a few `#` header
+lines first unless `--no-comments`); `prepare_data.py --out` writes the input CSV; `extrapolate_app.py --out` appends
+one row per call (application level).
+
+**Confidence (no measurement needed).** `--confidence` adds, per output (ExecTime, Mem%, Occupancy, breakdown),
+`conf_<output>` = `high` / `medium` / `low` and `exp_err_<output>` = the error to expect at that level, plus the raw
+signals (`ens_cv_et`, `ens_sd_*` = disagreement between the ensemble members; `eta`, `eta_violation`, `log_dist_roof`,
+`mem_consistency` = roofline checks; an execution time faster than the roofline is always `low`). The levels and errors are
+calibrated on held-out predictions: the 7 GPUs the model never saw (4,784 kernels for time; 3,877 with a measured target
+profile for the other outputs). Mean error per level:
+
+| Output | high | medium | low | unit |
+|---|---|---|---|---|
+| ExecTime | 17.8 | 24.5 | 33.3 | % (absolute percentage error) |
+| Mem% | 6.2 | 12.5 | 35.9 | percentage points |
+| Occupancy | 3.2 | 6.4 | 42.0 | percentage points |
+| breakdown | 1.5 | 4.8 | 12.3 | percentage points (mean over the 4 shares) |
+
+For this model the levels rank the error for every output: `low` carries about 2x (time) to 13x (occupancy) the error
+of `high`. `exp_err` is a typical (mean) error, not a guaranteed interval. The thresholds were set with the held-out models'
+signals and are applied unchanged to the production weights.
+
+**Spread of the ensemble.** `PRED_SEED_TIMES=1` adds each ensemble member's time (`et_seed<j>`).
+
+**Errors against measurements.** If the kernels were also measured on the target, `--truth FILE` (row-matched CSV with
+`S-Execution Time [ns]`, and optionally `S-Memory Throughput [%]`, `S-Achieved Occupancy`, `S-brk_*`) adds `err_ExecTime`, `err_Mem%`,
+`err_Occupancy` and `err_brk_<bucket>` (time as absolute % error, the rest in percentage points) and prints an error summary:
+
+    python PINN/v3.25/predict_v325.py --csv inputs.csv --row all --truth measured.csv --confidence --out predictions.csv
+
+**Applications.** `extrapolate_app.py` (repository root) sums kernels x launches for one profiled run on one GPU and
+reports: the actual error on the base GPU; with `--target-nsys` (run measured on the target) `status = known` and the
+actual error there (`model_err_target_%`);
+for a target inside the trained range (`status = interpolated`) an 80% range `likely_target_ms_lo` / `_hi` from the
+held-out application errors; for a target beyond it (`status = extrapolated`) no calibrated range, only the seed spread
+(`*_seed_min` / `*_seed_max`).
+
 ## Accuracy
 
 Kernel-level mean absolute percentage error of execution time. Held out = leave-one-GPU-out: each GPU is never seen
