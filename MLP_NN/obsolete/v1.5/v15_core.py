@@ -14,7 +14,7 @@ import torch.nn.functional as F
 
 
 # --------------------------------------------------------------------------- #
-# model (verbatim from MLP_NN/mlp.py)                                          #
+# model (verbatim from the trainers' mlp.py)                                    #
 # --------------------------------------------------------------------------- #
 class MultiBranchMLP(nn.Module):
     def __init__(self, branch_dims, shared_branch_indices=None, branch_hidden=64,
@@ -60,7 +60,7 @@ class MultiBranchMLP(nn.Module):
 
 
 # --------------------------------------------------------------------------- #
-# input column lists (verbatim from MLP_NN/data_pipeline_v2.py)                #
+# input column lists (verbatim from data_pipeline_v2.py)                       #
 # --------------------------------------------------------------------------- #
 KERNEL_CONFIG_FEATURES = [
     "Block Size", "Grid Size", "Threads", "Registers Per Thread [register/thread]",

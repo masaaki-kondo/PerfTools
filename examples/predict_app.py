@@ -16,8 +16,8 @@ What it does
 Kernels without an nsys launch count, or without a finite prediction, are left out of every total (never counted as
 zero) and are listed on stderr. Gaps between launches, host code and copies are not modelled.
 
-Usage (from anywhere; --repo is the PerfTools checkout that holds the models, default: this file's folder)
-    python extrapolate_app.py \
+Usage (from anywhere; --repo is the PerfTools checkout that holds the models, default: the parent of this file's folder)
+    python examples/predict_app.py \
         --ncu   <HeCBench>/H200/ncu-full/ace-cuda__f899139d.csv \
         --nsys  <HeCBench>/H200/nsys-kernel-time/ace-cuda__f899139d.csv \
         --base  H200 \
@@ -53,14 +53,14 @@ import numpy as np
 import pandas as pd
 
 # Published models: (predictor script, artifact) relative to the repo root.
-MODELS = {"mlpnn": ("MLP_NN/v4.55/predict_v455.py", "MLP_NN/v4.55/v455_artifact"),   # MLP-NN v4.55
-          "pinn":  ("PINN/v3.25/predict_v325.py", "PINN/v3.25/v325_artifact")}         # PINN v3.25
+MODELS = {"mlpnn": ("MLP_NN/mlp-nn.py", "MLP_NN/v4.55"),   # MLP-NN v4.55
+          "pinn":  ("PINN/pinn.py", "PINN/v3.25")}         # PINN v3.25
 
 # Base GPUs: the GPUs with ncu training profiles (B300 has nsys only, so it cannot be a base).
 # ARCH = the 5 NCU-architectural spec inputs (warps per scheduler, active warps per SM / per scheduler, shared-memory
 # configuration size, block limit warps) at their representative values: the per-GPU medians over the GPU's ncu
 # profiles, which every reported accuracy uses (= max_warps_per_scheduler, max_warps_per_sm, 32 KB / 16 KB, warps / 8;
-# see MLP_NN/examples/prepare_data.py). Training itself uses each kernel's own values.
+# see examples/prepare_data.py). Training itself uses each kernel's own values.
 ARCH = {"A100": (16, 64, 16, 32768, 8), "H100": (16, 64, 16, 32768, 8), "H200": (16, 64, 16, 32768, 8),
         "GH200": (16, 64, 16, 32768, 8), "GB200": (16, 64, 16, 32768, 8), "L40S": (12, 48, 12, 16384, 6)}
 
@@ -174,7 +174,7 @@ def read_nsys(path):
 # ----------------------------------------------------------------------------------------------------------------- #
 def base_specs(dp, gpu, ncu):
     """SRC spec columns of the base GPU (also the TGT columns of the 1x reference), from the model's own GPU tables.
-    Mirrors MLP_NN/examples/prepare_data.spec_vector."""
+    Mirrors examples/prepare_data.spec_vector."""
     g = gpu.lower(); hw, pk, lb = dp.GPU_HW_FALLBACK[g], dp.GPU_PEAK_SPECS[g], dp.GPU_LATENCY_BW_SPECS[g]
     nsm = pd.to_numeric(ncu.get("# SMs [SM]", pd.Series(dtype=float)), errors="coerce").dropna()
     nsm = float(nsm.iloc[0]) if len(nsm) else hw["n_sms"]     # SMs as the profile saw them, else the table's
@@ -269,7 +269,7 @@ def main():
     ap.add_argument("--specs", required=True, help="spec sheet (csv/xlsx) holding the target GPU")
     ap.add_argument("--gpu", required=True, help="target column of the spec sheet")
     ap.add_argument("--model", default="mlpnn", choices=sorted(MODELS))
-    ap.add_argument("--repo", default=os.path.dirname(os.path.abspath(__file__)), help="PerfTools checkout with the models")
+    ap.add_argument("--repo", default=os.path.dirname(os.path.dirname(os.path.abspath(__file__))), help="PerfTools checkout with the models")
     ap.add_argument("--target-nsys", help="optional: nsys kernel-time CSV of the same run measured ON THE TARGET GPU "
                                           "(a real GPU) -> status 'known' and the actual error")
     ap.add_argument("--out", help="CSV to append the result row to")
@@ -279,10 +279,10 @@ def main():
     mdir = os.path.dirname(os.path.join(a.repo, MODELS[a.model][0]))
     # same spec sheet + runtime inputs as the predictor (its GPU tables: base GPU specs at the measured clock)
     os.environ.setdefault("GPU_SPEC_SHEET", os.path.join(a.repo, "data", "v4", "gpu_microarch_specs.csv"))
-    os.environ.setdefault("GPU_RUNTIME_INPUTS", os.path.join(mdir, "runtime_inputs_training.csv"))
+    os.environ.setdefault("GPU_RUNTIME_INPUTS", os.path.join(a.repo, MODELS[a.model][1], "runtime_inputs_training.csv"))
     sys.path[:0] = [a.repo, mdir]
-    import v15_core as core
-    from MLP_NN import data_pipeline_v2 as dp
+    import network as core
+    import data_pipeline_v2 as dp
     SPEC = core.GPU_SPEC_FEATURES
     NCU_COLS = (core.KERNEL_CONFIG_FEATURES + core.WORKLOAD_PROFILE_FEATURES + core.STALL_FEATURES + ["Execution Time"] +
                 ["Predicated-On FFMA Operations Per Cycle [inst]", "Predicated-On FADD Thread Instructions Executed Per Cycle [inst/cycle]",

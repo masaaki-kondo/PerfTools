@@ -1,4 +1,4 @@
-"""Self-contained inference core for v3 -- no-ET cross-GPU estimator + confidence.
+"""Self-contained inference core for MLP-NN v4.55 -- no-ET cross-GPU estimator + confidence.
 
 v40 (formerly v6b) predicts a kernel's target-GPU ExecTime, Memory Throughput %,
 Achieved Occupancy and stall breakdown WITHOUT using the source Execution Time as an
@@ -6,16 +6,16 @@ input (Kondo constraint). It reconstructs absolute performance from the other co
 via a residual-against-roofline target, source-roofline + log-rate features, and
 calibrated-scaling distillation baked into training (so the NN itself extrapolates).
 
-Artifact (MLP_NN/v40/v39_artifact/): model_seed{0..N}.pt + meta.pkl.
+Artifact (MLP_NN/v4.55/): model_seed{0..N}.pt + meta.pkl.
 predict() runs the seed ensemble and recovers physical outputs. No ExecTime input,
 no runtime formula -- a pure NN at inference.
 """
 import os, sys, pickle
 import numpy as np
 import torch
-sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))   # own v15_core copy
-import v15_core as vc
-from MLP_NN.data_pipeline_v2 import tcomp_anchor, troof_floor, t_lat_of, t_wave_of, t_memcap_of                      # reuse MultiBranchMLP + feature lists + extractors
+sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))   # own network.py copy
+import network as vc
+from data_pipeline_v2 import tcomp_anchor, troof_floor, t_lat_of, t_wave_of, t_memcap_of                      # reuse MultiBranchMLP + feature lists + extractors
 # GPU datasheet constants (inlined for a self-contained deliverable)
 GPU_HW_FALLBACK = {"a100": {"dram_bw": 2.039e12}, "h100": {"dram_bw": 3.35e12},
                    "gb200": {"dram_bw": 8.0e12}, "gb10": {"dram_bw": 0.273e12}}
@@ -23,11 +23,10 @@ GPU_PEAK_SPECS = {"a100": {"peak_fp32": 19.5e12, "peak_fp64": 9.7e12},
                   "h100": {"peak_fp32": 67e12, "peak_fp64": 34e12},
                   "gb200": {"peak_fp32": 80e12, "peak_fp64": 40e12},
                   "gb10": {"peak_fp32": 31e12, "peak_fp64": 0.46e12}}
-# 2026-10-09 FIX: the trainer builds the SOURCE-roofline features from data_pipeline_v2's tables (spec-sheet
-# overridden: H100 3657 GB/s, GB200 6580 GB/s, plus H200/GH200/L40S/MIG), but this inlined copy said H100
-# 3350 / GB200 8000 and had no H200/GH200/L40S at all -> train/inference skew on 4 derived features for
-# H100- and GB200-source rows, and a KeyError for the other sources. Use the pipeline's values.
-import MLP_NN.data_pipeline_v2 as _dp
+# 2026-10-15: the inlined tables above are the v4.0-era copy (H100 3350, GB200 8000 GB/s, no H200/GH200/L40S) but
+# train_v44 builds the same source-roofline features from the pipeline tables (3657 / 6580 + every GPU). Use the
+# pipeline as the single source of truth so inference matches training (same fix as v317/v318_core on 10-09).
+import data_pipeline_v2 as _dp
 GPU_HW_FALLBACK = {k: dict(v) for k, v in _dp.GPU_HW_FALLBACK.items()}
 GPU_PEAK_SPECS = {k: dict(v) for k, v in _dp.GPU_PEAK_SPECS.items()}
 
@@ -39,7 +38,7 @@ IB = ["kernel_config", "workload", "source_specs", "target_specs", "derived"]
 # every fold). Gated so the effect on interpolation vs extrapolation can be MEASURED.
 KEEP = [0, 1, 2, 3, 4] + ([7] if os.environ.get("ET_INPUT", "0") == "1" else []); MEMBPS_COL = 6
 ET, MEMPCT, OCC = 0, 1, 2
-ART = os.path.join(os.path.dirname(__file__), "v39_artifact")
+ART = os.path.join(os.path.dirname(__file__), "v4.55")
 
 
 def load(artdir=ART):
@@ -80,6 +79,7 @@ def _features(samples):
         tms = b / sbw; tcs = np.fmax(f32 / sp32, f64 / sp64); roof_s = np.fmax(tms, tcs)
     mem_bps = D["workload"][:, MEMBPS_COL]
     feats = np.column_stack([feats, L(tms), L(tcs), L(roof_s), L(mem_bps)])
+    if _dp.BUSY_FEAT: feats = np.column_stack([feats, np.array([_dp.busy_feats(s) for s in samples], float)])   # BUSY_FEAT (2026-10-19)
     feats = np.where(np.isfinite(feats), feats, np.nan)
     D["derived"] = np.concatenate([D["derived"], feats], axis=1)
     D["_twave_ns"] = np.nan_to_num(twave, nan=0.0) * 1e9      # WAVE_CLAMP ingredient; not a branch (IB), ignored by the net
@@ -104,6 +104,10 @@ def predict(models, meta, samples):
     for k in IB:
         D[k] = np.where(np.isnan(D[k]), cm[k], D[k])
     N = {k: torch.tensor(vc.safe_standardize(D[k], stats[k][0], stats[k][1]), dtype=torch.float32) for k in IB}
+    _bc = float(os.environ.get("BUSY_FEAT_CLIP", meta.get("busy_feat_clip", 0)))   # BUSY_FEAT: clip the 3 busy inputs to +-z of training (0 = off; default from meta)
+    if meta.get("busy_feat") and _bc > 0:
+        if os.environ.get("BUSY_FEAT_DIAG"): open(os.environ["BUSY_FEAT_DIAG"], "a").write("busy z max %s\n" % N["derived"][:, -3:].abs().max(0).values.tolist())
+        N["derived"][:, -3:] = N["derived"][:, -3:].clamp(-_bc, _bc)
     rmn, rsd = stats["target_regression"]
     rlo, rhi = meta["clip"]
     lps, mems, occs, brks = [], [], [], []
@@ -143,6 +147,10 @@ def predict_seeds(models, meta, samples, _no_transport=False):
     for k in IB:
         D[k] = np.where(np.isnan(D[k]), cm[k], D[k])
     N = {k: torch.tensor(vc.safe_standardize(D[k], stats[k][0], stats[k][1]), dtype=torch.float32) for k in IB}
+    _bc = float(os.environ.get("BUSY_FEAT_CLIP", meta.get("busy_feat_clip", 0)))   # BUSY_FEAT: clip the 3 busy inputs to +-z of training (0 = off; default from meta)
+    if meta.get("busy_feat") and _bc > 0:
+        if os.environ.get("BUSY_FEAT_DIAG"): open(os.environ["BUSY_FEAT_DIAG"], "a").write("busy z max %s\n" % N["derived"][:, -3:].abs().max(0).values.tolist())
+        N["derived"][:, -3:] = N["derived"][:, -3:].clamp(-_bc, _bc)
     rmn, rsd = stats["target_regression"]
     rlo, rhi = meta["clip"]
     lps, mems, occs, brks = [], [], [], []
@@ -153,7 +161,7 @@ def predict_seeds(models, meta, samples, _no_transport=False):
             lps.append(pr[:, ET]); mems.append(pr[:, MEMPCT]); occs.append(pr[:, OCC]); brks.append(po["breakdown"].numpy())
     lps = np.asarray(lps); mems = np.asarray(mems); occs = np.asarray(occs); brks = np.asarray(brks)
     # TRUST_Z: outside the training range, pull the residual toward the training-typical
-    # value (rmn[ET], the mean residual) -- see v15_core.trust_weight. No-op unless set.
+    # value (rmn[ET], the mean residual) -- see network.trust_weight. No-op unless set.
     _w = vc.trust_weight(D["target_specs"], stats["target_specs"][0], stats["target_specs"][1])
     if _w is not None:
         # anchor residual: TRUST_MODE=mean -> training-mean residual (typical efficiency);
@@ -172,7 +180,7 @@ def predict_seeds(models, meta, samples, _no_transport=False):
                 _cls = "COMM" if (_tm > _tc and _mp >= 50) else ("COMP" if (_tc > _tm and _f > 0) else "LATENCY")
                 _anchor[_i] = float(np.clip(_ta.get(_cls, float(rmn[ET])), rlo, rhi))
         if os.environ.get("TRUST_MODE", "mean") == "src":
-            from MLP_NN.data_pipeline_v2 import GPU_HW_FALLBACK as _HW, GPU_PEAK_SPECS as _PK
+            from data_pipeline_v2 import GPU_HW_FALLBACK as _HW, GPU_PEAK_SPECS as _PK
             for _i, _s in enumerate(samples):
                 _g = str(_s.get("src_gpu", "")).lower(); _et = float(_s.get("src_dur_ns", np.nan) or np.nan)
                 if _g in _HW and _et == _et and _et > 0:
@@ -182,19 +190,9 @@ def predict_seeds(models, meta, samples, _no_transport=False):
                     if _tr > 0 and np.isfinite(_tr):
                         _anchor[_i] = float(np.clip(np.log(max(_et, 1.0) / max(_tr, 1.0)), rlo, rhi))
         if os.environ.get("TRUST_MODE", "mean") == "cap":
-            # TRUST_MODE=cap (2026-10-07): no blending. Outside the trained envelope (w < 1) the residual
-            # may not exceed the class-typical residual + TRUST_CAP_MARGIN nats (default 1.0 = the
-            # kernel may be at most e^1 ~ 2.7x less efficient than its class median). Motivation: with
-            # L40S held out, FP64 GEMM rows saturate at the training clip (pred ~1000x the roofline,
-            # true ~1.2x) because the FP32/FP64 ratio (64) is ~20 sigma outside the trained range (~2).
-            # Rows inside the envelope, and rows outside it with a plausible residual, are untouched.
+            # TRUST_MODE=cap (ported from v318_core, 2026-10-09): outside the trained envelope on an
+            # ARCHITECTURE axis, cap each seed's residual at class anchor + TRUST_CAP_MARGIN; no blending.
             _cap = _anchor + float(os.environ.get("TRUST_CAP_MARGIN", "1.0"))
-            # Applied PER SEED (seeds disagree wildly out of range: one row had seed residuals
-            # -10 / +70 / -30); the lower clip at rlo stays on the ensemble mean as everywhere else, so
-            # a row whose seeds mostly say 'at the roofline' lands on the roofline floor.
-            # Trigger only on ARCHITECTURE axes (per-SM structure, FP32/FP64, flop/byte, L2/SM, latency,
-            # host link; TRUST_CAP_AXES), never on capacity (axes 6/7/9: BW per SM, L2 per SM, tensor flop/s): a
-            # whole-GPU x8-x32 projection is far out of range on capacity BY DESIGN and must not be capped.
             _ax = [int(a) for a in os.environ.get("TRUST_CAP_AXES", "0,1,2,3,4,5,8,10,11,12").split(",")]
             _ax = [a for a in _ax if a < D["target_specs"].shape[1]]
             _wc = vc.trust_weight(np.asarray(D["target_specs"])[:, _ax], np.asarray(stats["target_specs"][0])[_ax], np.asarray(stats["target_specs"][1])[_ax])
@@ -215,7 +213,10 @@ def predict_seeds(models, meta, samples, _no_transport=False):
         _rc = float(os.environ.get("AT_REFCAP", "1.25"))
         _cand = [i for i in range(len(samples)) if _near[i] is not None and (_wt[i] < 1.0 or _rc > 0)]
         _ref0 = {i: _dp.REF_BUILDER(samples[i], _near[i]) for i in _cand}
+        _held = {_m.group(1)} if (_m and os.environ.get("AT_HELDOUT_REF", "0") == "1" and os.environ.get("AT_HELDOUT_CAP", "0") != "1") else set()
         def _scaled(s, r):
+            if str(s.get("tgt_gpu", "")).lower() in _held and str(r.get("tgt_gpu", "")).lower() != str(s.get("tgt_gpu", "")).lower():
+                return False   # held-out real GPU redirected to a training GPU: distance blend only, no refcap / clamp
             ks = ("target_dram_bw", "target_peak_fp32", "target_peak_fp64", "target_n_sms")
             try:
                 return any(abs(float(s[k]) / float(r[k]) - 1.0) > 0.05 for k in ks)   # 5%: GB200 rows carry 152 SMs vs the table 148 (2.7%)
@@ -264,38 +265,56 @@ def predict_seeds(models, meta, samples, _no_transport=False):
         _cc = np.fmax(D["_compcap_ns"], troof); et_seeds = np.minimum(et_seeds, _cc[None, :]); _etp = np.minimum(_etp, _cc)
     if _dp.WAVE_CLAMP:                                              # one-wave floor, inference only
         et_seeds = np.fmax(et_seeds, D["_twave_ns"][None, :]); _etp = np.fmax(_etp, D["_twave_ns"])
+    _mem = np.clip(mems.mean(0), 0.0, 100.0); _il = np.zeros(len(samples), bool)
+    if os.environ.get("ISSUE_FLOOR", "1") == "1":                    # instruction-issue limit (2026-10-20; in the core since 2026-10-21)
+        # a scheduler issues at most 1 warp instruction per cycle: time >= issued / (4 schedulers x SMs x clock) = issued / target
+        # peak_inst. Hard physical floor on the ensemble answer (like the roofline/wave floors); same bytes over a longer time ->
+        # Mem% scaled. Needs the source run's issued count (src_issued_inst); rows without it are untouched. ISSUE_FLOOR=0 = off.
+        _iss = np.array([s.get("src_issued_inst", np.nan) for s in samples], float)
+        _pin = np.array([s.get("target_peak_inst", np.nan) for s in samples], float)
+        with np.errstate(divide="ignore", invalid="ignore"):
+            _ti = _iss / _pin * 1e9; _il = _ti > _etp
+        _mem[_il] *= _etp[_il] / _ti[_il]; _etp = np.where(_il, _ti, _etp)
     mem_seeds = np.clip(mems, 0.0, 100.0); occ_seeds = np.clip(occs, 0.0, 100.0)
     return dict(trust_w=(_w if _w is not None else np.ones(len(samples))),
                 et_p=_etp,
-                mem=np.clip(mems.mean(0), 0.0, 100.0), occ=np.clip(occs.mean(0), 0.0, 100.0),
+                mem=_mem, occ=np.clip(occs.mean(0), 0.0, 100.0), issue_limited=_il,
                 brk=brks.mean(0), et_seeds=et_seeds, mem_seeds=mem_seeds, occ_seeds=occ_seeds,
                 brk_seeds=brks, log_et_seeds=lps, troof=troof)
 
 
 # --------------------------------------------------------------------------- #
-# v3 confidence estimation                                                   #
+# v4.5 confidence estimation                                                   #
 # --------------------------------------------------------------------------- #
 # Two independent, ground-truth-FREE signals:
 #   (a) ENSEMBLE VARIANCE  - how much the 5 seeds disagree (epistemic uncertainty)
 #   (b) ROOFLINE CONSISTENCY - does the answer obey physics, and how far does it sit
 #       from the roofline floor the model is anchored to
 #
-# CALIBRATION was measured FOR THIS ARTIFACT on the 2,535 measured A100/H100/GB200
-# kernel-pairs in MLP_NN/examples/*_from_Yoshida-san_20260522.csv, by binning rows into
-# signal quintiles and recording the ACTUAL error per bin (analyze_error_confidence.py).
-# Rank correlation signal-vs-error:
-#   stall breakdown +0.49 | ExecTime +0.34 | occupancy +0.28 | Mem% +0.27  (all positive)
-# So the signals genuinely order the errors.
-#
-# Bucket = top 20% of the signal -> "low", next 20% -> "medium", rest -> "high".
-# `exp_err` is the MEASURED mean error of that bucket, i.e. what to actually expect.
-# NOTE: fitted in-sample; treat exp_err as indicative until a held-out calibration exists.
-CONF_CAL = {
-    #  signal                       q60        q80    exp_err(high, medium, low)   unit
-    "ExecTime":  dict(sig="ens_cv_et",  q60=0.04287, q80=0.06042, exp=(4.44, 5.21, 13.90), unit="%"),
-    "Mem%":      dict(sig="ens_sd_mem", q60=1.02620, q80=1.42634, exp=(0.92, 1.15, 2.69), unit="pp"),
-    "Occupancy": dict(sig="ens_sd_occ", q60=0.87811, q80=1.20292, exp=(0.85, 1.05, 3.38), unit="pp"),
-    "breakdown": dict(sig="ens_sd_brk", q60=0.38626, q80=0.66432, exp=(0.47, 1.09, 3.29), unit="pp"),
+# Calibration: see CONF_CAL2 below (two signals, held-out).
+
+
+# Two-signal confidence (2026-10-21), calibrated on the same held-out folds: exp_err from the TARGET's distance from the
+# trained GPUs x the ensemble spread; conf_<output> from exp_err (cut = high/medium, medium/low boundaries).
+CONF_D_NEAR, CONF_D_FAR = 0.3, 1.0   # gpu_distance bins: near < 0.3 <= mid < 1.0 <= far
+# held-out GPUs: h200 0.169, h100 0.025, a100 0.605, gh200 0.019, l40s 2.289, gb200 0.488, b300 2.289
+CONF_CAL2 = {   # per output: per bin (q60, q80 of the ensemble signal; mean error high / medium / low level), far = one value
+    "ExecTime": dict(sig="ens_cv_et", cut=(16.0, 25.0),
+                near=dict(q60=0.03859, q80=0.05559, exp=(10.75, 15.55, 21.11)),
+                mid=dict(q60=0.0445, q80=0.0628, exp=(20.12, 22.67, 40.06)),
+                far=27.68),
+    "Mem%": dict(sig="ens_sd_mem", cut=(6.0, 12.0),
+                near=dict(q60=1.68187, q80=2.29847, exp=(3.7, 5.18, 7.11)),
+                mid=dict(q60=2.29625, q80=3.36758, exp=(7.47, 11.34, 13.13)),
+                far=33.63),
+    "Occupancy": dict(sig="ens_sd_occ", cut=(3.0, 6.0),
+                near=dict(q60=1.21407, q80=1.64239, exp=(1.35, 1.62, 4.1)),
+                mid=dict(q60=1.88656, q80=2.78251, exp=(4.86, 4.29, 5.1)),
+                far=27.37),
+    "breakdown": dict(sig="ens_sd_brk", cut=(2.0, 5.0),
+                near=dict(q60=0.43474, q80=0.79769, exp=(0.73, 1.85, 3.38)),
+                mid=dict(q60=0.64649, q80=1.09064, exp=(1.34, 3.13, 5.94)),
+                far=17.34),
 }
 
 
@@ -304,11 +323,12 @@ def confidence(R, samples):
 
     Returns per-sample arrays: the raw signals (ens_cv_et / ens_sd_mem / ens_sd_occ /
     ens_sd_brk / eta / eta_violation / log_dist_roof / mem_consistency) plus, per output,
-    conf_<output> in {high, medium, low} and exp_err_<output> (see CONF_CAL).
+    gpu_distance / gpu_familiarity (near / mid / far) and, per output, exp_err_<output> (CONF_CAL2) and
+    conf_<output> in {high, medium, low} derived from it.
 
-    A physics violation (eta > 1: predicted faster than the roofline allows) forces 'low'
-    on Execution Time no matter how much the seeds agree -- the failure mode ensemble
-    variance alone cannot see.
+    A physics violation (eta > 1: predicted faster than the roofline allows) puts Execution Time in the
+    least reliable level of its familiarity bin (near / mid) however much the seeds agree; in the far bin
+    every row already gets the far value. conf_<output> follows exp_err.
     """
     et_p = np.asarray(R["et_p"], float)
     troof = np.asarray(R["troof"], float)
@@ -331,16 +351,45 @@ def confidence(R, samples):
         implied = byts / (et_p * 1e-9) / bw * 100.0
         out["mem_consistency"] = np.abs(np.asarray(R["mem"], float) - np.clip(implied, 0, 100))
 
-    for name, c in CONF_CAL.items():
-        v = np.asarray(out[c["sig"]], float)
-        lab = np.where(~np.isfinite(v), "unknown",
-                       np.where(v >= c["q80"], "low", np.where(v >= c["q60"], "medium", "high")))
-        if name == "ExecTime":                      # physics veto
-            lab = np.where(out["eta_violation"] == 1, "low", lab)
-        exp = np.select([lab == "high", lab == "medium", lab == "low"], list(c["exp"]), default=np.nan)
-        out[f"conf_{name}"] = lab
+    # GPU-level signal: distance of the TARGET from the GPUs the model was trained on (balance space + size, as
+    # AXIS_TRANSPORT). The ensemble cannot see an error shared by all members on an unfamiliar GPU; this can.
+    dist = gpu_distance(samples); out["gpu_distance"] = dist
+    fam = np.where(~np.isfinite(dist), "unknown", np.where(dist < CONF_D_NEAR, "near", np.where(dist < CONF_D_FAR, "mid", "far")))
+    out["gpu_familiarity"] = fam
+    for name, c in CONF_CAL2.items():
+        v = np.asarray(out[c["sig"]], float); exp = np.full(len(v), np.nan)
+        for g in ("near", "mid"):                   # within a familiarity bin the ensemble spread ranks the error
+            k = (fam == g) & np.isfinite(v)
+            lvl = np.where(v >= c[g]["q80"], 2, np.where(v >= c[g]["q60"], 1, 0))
+            if name == "ExecTime":                  # physics veto: faster than the roofline = least reliable level
+                lvl = np.where(out["eta_violation"] == 1, 2, lvl)
+            exp = np.where(k, np.asarray(c[g]["exp"])[lvl], exp)
+        exp = np.where(fam == "far", c["far"], exp)  # far: one held-out value (the spread does not rank the error there)
+        lo, hi = c["cut"]
         out[f"exp_err_{name}"] = exp
+        out[f"conf_{name}"] = np.where(~np.isfinite(exp), "unknown", np.where(exp <= lo, "high", np.where(exp <= hi, "medium", "low")))
     return out
+
+
+def gpu_distance(samples):
+    """Distance of each sample's target GPU from the nearest GPU the model was trained on: max |difference| of the
+    log balance coordinates (bandwidth/SM, FP32/byte, FP32/FP64, size), plus how far the SM count lies outside the trained
+    range (log). 0 for a training GPU. Same measure as data_pipeline_v2.axis_weight (AXIS_TRANSPORT)."""
+    H, P = _dp.GPU_HW_FALLBACK, _dp.GPU_PEAK_SPECS
+    names = [g for g in H if g in P and g != "gb10"]
+    pts = np.array([_dp._balance(H[g]["dram_bw"], P[g]["peak_fp32"], P[g]["peak_fp64"], H[g]["n_sms"]) for g in names])
+    sms = [float(H[g]["n_sms"]) for g in names]; nlo, nhi = min(sms), max(sms)
+    d = np.full(len(samples), np.nan)
+    for i, s in enumerate(samples):
+        try:
+            nt = float(s["target_n_sms"]) if np.isfinite(float(s.get("target_n_sms", np.nan))) else \
+                 float(H.get(str(s.get("tgt_gpu", "")).lower(), {}).get("n_sms", np.nan))
+            bt = _dp._balance(float(s["target_dram_bw"]), float(s["target_peak_fp32"]), float(s["target_peak_fp64"]), nt)
+        except (KeyError, TypeError, ValueError):
+            continue
+        if np.all(np.isfinite(bt)):
+            d[i] = max(float(np.min(np.max(np.abs(pts - bt[None, :]), axis=1))), np.log(nt / nhi), np.log(nlo / nt), 0.0)
+    return d
 
 
 BRK_NAMES = ["memory", "pipeline_contention", "sync", "scheduling_overhead"]
@@ -356,7 +405,7 @@ def attach_errors(out_rows, truth_path):
     Adds err_<output> to each row (ExecTime as APE %, the rest as absolute error in pp),
     prints a per-output breakdown split by self/cross, and returns the added column names.
     Row i of the truth file must correspond to row i of the input -- which is how the
-    *_from_Yoshida-san_*.csv pair is generated (see MLP_NN/examples/make_full_dataset.py).
+    *_from_Yoshida-san_*.csv pair is generated (see examples/make_full_dataset.py).
     """
     import csv as _csv
     with open(truth_path) as f:
@@ -383,7 +432,7 @@ def attach_errors(out_rows, truth_path):
         acc[name] = (np.asarray(vals, float), "%" if kind == "pct" else "pp")
 
     pt = np.array([t.get("meta-pair_type", "") for t in T])
-    sys.stderr.write("\n=== v3 error breakdown vs %s ===\n" % os.path.basename(truth_path))
+    sys.stderr.write("\n=== v4.5 error breakdown vs %s ===\n" % os.path.basename(truth_path))
     sys.stderr.write(f"{'output':<26}{'ALL':>18}{'self':>18}{'cross':>18}\n")
     for name, (v, unit) in acc.items():
         cells = []
@@ -410,21 +459,24 @@ CONF_LEGEND = [
     "",
     "  B) ROOFLINE CONSISTENCY -- the prediction checked against physics.",
     "     eta = t_roof / ExecTime must lie in (0, 1]: a kernel cannot run faster than",
-    "     the roofline allows. eta > 1 is physically impossible and forces conf=low",
-    "     however much the seeds agree -- the failure mode variance alone cannot see.",
+    "     the roofline allows. eta > 1 is physically impossible: ExecTime then takes",
+    "     the least reliable level of its familiarity bin, however much the seeds agree.",
     "       eta              predicted efficiency (must be <= 1)",
     "       eta_violation    1 = impossible prediction",
     "       log_dist_roof    distance of the answer from the roofline floor",
     "       mem_consistency  predicted Mem% vs bytes/(ExecTime*BW), an internal check",
     "",
-    "Reported per output: conf_<output> = high | medium | low, and exp_err_<output> =",
-    "the MEASURED mean error of that bucket (top 20% of the signal -> low, next 20% ->",
-    "medium, rest -> high). Calibrated on 2,535 measured A100/H100/GB200 kernel-pairs;",
-    "signal-vs-error rank correlation: breakdown +0.49, ExecTime +0.34, occupancy +0.28,",
-    "Mem% +0.27 -- 'low' carries 3-7x the error of 'high'.",
-    "Limits: thresholds are fitted IN-SAMPLE (exp_err is indicative, not a guaranteed",
-    "interval); ensemble variance measures seed disagreement, NOT correctness; the",
-    "calibration covers the A100/H100/GB200 regime only.",
+    "Reported per output: exp_err_<output> = the error to expect, and conf_<output> = high |",
+    "medium | low derived from it. exp_err combines two signals, calibrated on HELD-OUT",
+    "predictions (7 GPUs the model never saw): gpu_familiarity (near / mid / far = how far",
+    "the target's specs lie from the trained GPUs, gpu_distance) and, within near and mid,",
+    "the ensemble spread (top 20% -> low level, next 20% -> medium, rest -> high).",
+    "Mean held-out error by familiarity, level high/medium/low:",
+    "  ExecTime  near 10.8/15.6/21.1, mid 20.1/22.7/40.1, far 27.7 %",
+    "  Mem%      near 3.7/5.2/7.1, mid 7.5/11.3/13.1, far 33.6 pp",
+    "  Occupancy near 1.4/1.6/4.1, mid 4.9/4.3/5.1, far 27.4 pp",
+    "  breakdown near 0.7/1.9/3.4, mid 1.3/3.1/5.9, far 17.3 pp",
+    "exp_err is a typical (mean) error, not a guaranteed interval.",
 ]
 
 

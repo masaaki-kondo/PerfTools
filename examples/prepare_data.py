@@ -1,18 +1,18 @@
 #!/usr/bin/env python3
 """Build the model input CSV (one row per kernel and target GPU) from ncu profiles on a SOURCE GPU and the spec sheet.
 
-The predictors (MLP_NN/v4.55/predict_v455.py, PINN/v3.25/predict_v325.py) read every input from this CSV:
+The predictors (MLP_NN/mlp-nn.py, PINN/pinn.py) read every input from this CSV:
     ncu metrics of the kernel on the source GPU   +   SRC <spec> / TGT <spec> columns   +   TGT peak_* columns.
 The target GPU is never profiled: it is described by its specs only (known GPU = a column of the spec sheet; unknown or
 future GPU = a column of a file you pass with --target-specs).
 
 Usage
     # Yoshida-san's raw ncu-full files of one or more runs (files or folders), source H200, targets H100 and GB200
-    python MLP_NN/examples/prepare_data.py --ncu <HeCBench>/H200/ncu-full/ace-cuda__f899139d.csv \
+    python examples/prepare_data.py --ncu <HeCBench>/H200/ncu-full/ace-cuda__f899139d.csv \
         --src H200 --tgt H100,GB200 --out inputs.csv
     # a GPU that is not in the spec sheet: its specs at runtime, same layout (spec,unit,<GPU column>)
-    python MLP_NN/examples/prepare_data.py --ncu <files> --src H200 --tgt MyGPU --target-specs my_gpu.csv --out inputs.csv
-    python MLP_NN/v4.55/predict_v455.py --csv inputs.csv --row all --out pred.csv
+    python examples/prepare_data.py --ncu <files> --src H200 --tgt MyGPU --target-specs my_gpu.csv --out inputs.csv
+    python MLP_NN/mlp-nn.py --csv inputs.csv --row all --out pred.csv
 
 ncu input: the long-form `ncu --csv` export (one row per kernel x metric; Yoshida-san's ncu-full files), or a wide CSV
 (one row per kernel). One row per kernel name is used: for a long-form
@@ -36,8 +36,8 @@ state the clock it will run at (peaks are scaled to it; default: the boost clock
 import argparse, glob, io, os, re, sys
 
 HERE = os.path.dirname(os.path.abspath(__file__))
-ROOT = os.path.dirname(os.path.dirname(HERE))
-# flags that select the model's feature lists; must be set before v15_core is imported
+ROOT = os.path.dirname(HERE)
+# flags that select the model's feature lists; must be set before network is imported
 os.environ.update(HITRATES="1", LOG_SPECS="0", DROP_C2C="0", LAT_ANCHOR="1", INST_ANCHOR="2")
 import numpy as np
 import pandas as pd
@@ -167,18 +167,20 @@ def main():
     ap.add_argument("--tgt", required=True, help="target GPU(s), comma-separated (spec-sheet or --target-specs columns)")
     ap.add_argument("--target-specs", help="spec file for GPUs not in the spec sheet (same layout)")
     ap.add_argument("--runtime-inputs", help="extra runtime values (same layout), e.g. a target's DRAM latency")
-    ap.add_argument("--model-dir", default=os.path.join(ROOT, "MLP_NN", "v4.55"),
-                    help="model folder: its v15_core.py (feature lists) and runtime_inputs_training.csv are used")
+    ap.add_argument("--model-dir", default=os.path.join(ROOT, "MLP_NN"),
+                    help="model folder: its network.py (feature lists) is used")
+    ap.add_argument("--weights-dir", default=os.path.join(ROOT, "MLP_NN", "v4.55"),
+                    help="weights folder: its runtime_inputs_training.csv (actual values of the training GPUs) is used")
     ap.add_argument("--smem-config", type=float, help="Shared Memory Configuration Size [byte] for the TARGET (new SM design)")
     ap.add_argument("--out", required=True)
     a = ap.parse_args()
 
     sys.path.insert(0, a.model_dir)
-    import v15_core as core
+    import network as core
     SPEC = core.GPU_SPEC_FEATURES
     NCU_COLS = core.KERNEL_CONFIG_FEATURES + core.WORKLOAD_PROFILE_FEATURES + core.STALL_FEATURES + ["Execution Time"] + FP_COUNTERS
 
-    files = [SPEC_SHEET] + [p for p in (os.path.join(a.model_dir, "runtime_inputs_training.csv"), a.target_specs, a.runtime_inputs) if p]
+    files = [SPEC_SHEET] + [p for p in (os.path.join(a.weights_dir, "runtime_inputs_training.csv"), a.target_specs, a.runtime_inputs) if p]
     specs = read_specs(files)                   # sheet + runtime values (DRAM latency, measured overrides) + user files
     for g in [a.src] + a.tgt.split(","):
         if g not in specs:

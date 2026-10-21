@@ -1,10 +1,8 @@
-"""Self-contained inference core for the v1.5 cross-GPU estimator.
+"""Network and feature code shared by the model's inference (mlpnn_core.py / pinn_core.py and the entry point).
 
-Contains the model class + the EXACT feature construction used at training time,
-copied verbatim from the research code so predictions match.  Depends only on
-numpy / pandas / torch — nothing else in MLP_NN/.
-
-v1.5 = MLP + roofline quantities as extra INPUT features (always on here).
+Contains the network class (MultiBranchMLP), the input column lists and the EXACT feature construction used at
+training time, copied verbatim from the research code so predictions match. Depends only on numpy / pandas / torch.
+It started as the inference core of MLP v1.5.
 """
 import os
 import numpy as np
@@ -15,7 +13,7 @@ import torch.nn.functional as F
 
 
 # --------------------------------------------------------------------------- #
-# model (verbatim from MLP_NN/mlp.py)                                          #
+# model (verbatim from the training code)                                       #
 # --------------------------------------------------------------------------- #
 class MultiBranchMLP(nn.Module):
     def __init__(self, branch_dims, shared_branch_indices=None, branch_hidden=64,
@@ -72,7 +70,7 @@ class MultiBranchMLP(nn.Module):
 
 
 # --------------------------------------------------------------------------- #
-# input column lists (verbatim from MLP_NN/data_pipeline_v2.py)                #
+# input column lists (verbatim from data_pipeline_v2.py)                       #
 # --------------------------------------------------------------------------- #
 KERNEL_CONFIG_FEATURES = [
     "Block Size", "Grid Size", "Threads", "Registers Per Thread [register/thread]",

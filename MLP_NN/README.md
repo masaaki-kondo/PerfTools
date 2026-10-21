@@ -4,25 +4,26 @@ Predicts, for one CUDA kernel profiled with ncu on a **source** GPU, its executi
 stall-cycle breakdown and execution-cycle breakdown on a **target** GPU: a real GPU or a hypothetical one described by
 its specs. The target GPU never needs a profile.
 
-MLP-NN v4.55 is the v4.46 inference code with new weights (`v455_artifact/`, 5 seeds), trained on Yoshida-san's
+MLP-NN v4.55 is the v4.46 inference code with new weights (`v4.55/`, 5 seeds), trained on Yoshida-san's
 HeCBench profiles including the 2026-10-17 sweep (A100, H100, H200, GH200 96 GB, GB200, L40S, H100 MIG 1g/2g/4g; B300
-as an nsys-only target). The previous release (2026-10-16) is in `MLP_NN/obsolete/v4.46/`; it still runs and its
-outputs are unchanged.
+as an nsys-only target). The previous release (2026-10-16) is in `MLP_NN/obsolete/v4.46/` (weights only); run it with
+`python MLP_NN/mlp-nn.py --artifact MLP_NN/obsolete/v4.46 ...` (current inference code, so outputs differ slightly from
+the 2026-10-16 release).
 
 ## Quick start
 
 ```
-python MLP_NN/examples/prepare_data.py --ncu <ncu files or folders> --src H200 --tgt H100,GB200 --out inputs.csv
-python MLP_NN/v4.55/predict_v455.py --csv inputs.csv --row all --out predictions.csv
+python examples/prepare_data.py --ncu <ncu files or folders> --src H200 --tgt H100,GB200 --out inputs.csv
+python MLP_NN/mlp-nn.py --csv inputs.csv --row all --out predictions.csv
 ```
 
 `--row N` predicts one data row. `--confidence` adds per-output confidence levels and expected errors (see below). `--artifact DIR` selects other
 weights. `--runtime-inputs FILE` supplies your own actual GPU values (see below). Requires numpy, pandas, torch.
-For a whole application run on one GPU, see `extrapolate_app.py` in the repository root.
+For a whole application run on one GPU, see `examples/predict_app.py`.
 
 ## Inputs
 
-One row per kernel (and target GPU), same columns as `MLP_NN/examples/example_inputs.csv`:
+One row per kernel (and target GPU), same columns as `examples/kernel_inputs.csv`:
 
 - `src_gpu`, `tgt_gpu`: GPU names (columns of the spec sheet), or any name for a hypothetical target.
   `src_gpu` must be a GPU with ncu profiles: A100, H100, H200, GH200, GB200, GB10, L40S, H100_MIG_1g/2g/4g.
@@ -31,7 +32,7 @@ One row per kernel (and target GPU), same columns as `MLP_NN/examples/example_in
   These are the kernel's actual measurements on the source GPU.
 - `SRC ...` / `TGT ...` GPU spec columns, `TGT peak_*` columns, and `TGT n_sms` for a GPU the predictor does not know.
 
-Build the CSV with `MLP_NN/examples/prepare_data.py`. It reads Yoshida-san's raw long-form ncu-full files or wide
+Build the CSV with `examples/prepare_data.py`. It reads Yoshida-san's raw long-form ncu-full files or wide
 CSVs; `--src`, `--tgt` choose the GPUs, `--target-specs FILE` describes a GPU that is not in the spec sheet,
 `--runtime-inputs FILE` adds actual values, `--smem-config` sets the shared-memory configuration for a new SM design.
 
@@ -47,8 +48,8 @@ measured error.
 ## Spec sheet and runtime inputs
 
 - `data/v4/gpu_microarch_specs.csv`: datasheet values only. The `model_input` column marks each row as `yes` (a model
-  input), `reference` or `no (descriptive)`. The earlier sheet `data/gpu_microarch_specs.csv` (LightGBM, MLP v1.5) is unchanged; the 10-16 one is in `data/obsolete/`.
-- `runtime_inputs_training.csv` (this folder): the **actual** values the model was trained with, applied on top of the
+  input), `reference` or `no (descriptive)`. The earlier sheet `data/gpu_microarch_specs.csv` (LightGBM, MLP v1.5) is unchanged; the 2026-10-16 sheet is `data/obsolete/gpu_microarch_specs_v3.csv`.
+- `v4.55/runtime_inputs_training.csv` (in the weights folder): the **actual** values the model was trained with, applied on top of the
   spec sheet: operating SM clocks, DRAM latency, measured bandwidths. These are the defaults; they
   reproduce the validated predictions.
 - `--runtime-inputs FILE`: your own actual values, same layout (`spec,unit,<GPU columns>`), applied on top of the
@@ -63,7 +64,7 @@ Per row:
 - `exec_cycles` (= time x clock) and the execution-cycle breakdown `cyc_running`, `cyc_memory`,
   `cyc_pipeline_contention`, `cyc_sync`, `cyc_scheduling_overhead` (running + 4 stall shares = 1);
   `running_cycles` = issued warp instructions of the source run (exact for a target with the same SM architecture).
-  These are NaN when the input has no `Issued Instructions [inst]`.
+  `running_cycles` and `cyc_*` are NaN when the input has no `Issued Instructions [inst]`; `exec_cycles` is always given.
 - `issue_limited`: 1 when the time was raised to the instruction-issue limit (see below).
 - Roofline floor `t_mem_ns`, `t_comp_ns`, `t_roof_ns`, `efficiency_eta` (= t_roof / predicted time), and `trust_w`
   (1 = target inside the trained spec envelope, < 1 = outside, prediction blended toward the physics anchor).
@@ -72,7 +73,7 @@ Per row:
 ## Confidence, errors and output files
 
 **Output files.** Every result is a CSV: the predictor writes one row per input row to `--out FILE` (a few `#` header
-lines first unless `--no-comments`); `prepare_data.py --out` writes the input CSV; `extrapolate_app.py --out` appends
+lines first unless `--no-comments`); `prepare_data.py --out` writes the input CSV; `predict_app.py --out` appends
 one row per call (application level).
 
 **Confidence (no measurement needed).** `--confidence` adds, per output (ExecTime, Mem%, Occupancy, breakdown),
@@ -111,9 +112,9 @@ guaranteed interval; beyond the trained range (far) the true error can be larger
 `S-Execution Time [ns]`, and optionally `S-Memory Throughput [%]`, `S-Achieved Occupancy`, `S-brk_*`) adds `err_ExecTime`, `err_Mem%`,
 `err_Occupancy` and `err_brk_<bucket>` (time as absolute % error, the rest in percentage points) and prints an error summary:
 
-    python MLP_NN/v4.55/predict_v455.py --csv inputs.csv --row all --truth measured.csv --confidence --out predictions.csv
+    python MLP_NN/mlp-nn.py --csv inputs.csv --row all --truth measured.csv --confidence --out predictions.csv
 
-**Applications.** `extrapolate_app.py` (repository root) sums kernels x launches for one profiled run on one GPU and
+**Applications.** `examples/predict_app.py` sums kernels x launches for one profiled run on one GPU and
 reports: the actual error on the base GPU; with `--target-nsys` (run measured on the target) `status = known` and the
 actual error there (`model_err_target_%`);
 for a target inside the trained range (`status = interpolated`) an 80% range `likely_target_ms_lo` / `_hi` from the
@@ -159,9 +160,9 @@ Only execution time has this guard; the other outputs are network outputs.
 
 | File | Content |
 |---|---|
-| `predict_v455.py` | predictor (command line) |
-| `v455_core.py`, `v15_core.py` | inference code |
-| `v455_artifact/` | weights, 5 seeds, and `meta.pkl` |
-| `runtime_inputs_training.csv` | actual GPU values used in training |
+| `mlp-nn.py` | entry point (command line) |
+| `mlpnn_core.py`, `network.py`, `data_pipeline_v2.py` | inference code |
+| `v4.55/` | weights (5 seeds, `meta.pkl`) and `runtime_inputs_training.csv` (actual GPU values used in training) |
+| `obsolete/<version>/` | earlier versions |
 
-Shared code: `MLP_NN/data_pipeline_v2.py`, `MLP_NN/mlp.py`.
+

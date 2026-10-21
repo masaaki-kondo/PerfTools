@@ -1,0 +1,17 @@
+# HeCBench Profile
+# benchmark: attention-cuda
+# bench_key: attention
+# binary: /lvs0/dne1/rccs-hpbdrt/kohei/HeCBench_h200/HeCBench/src/attention-cuda/main
+# args: 65536 8192 0 1
+# args_source: args_csv:hbm_extreme
+# run_index: 4
+# reproduce: /lvs0/dne1/rccs-hpbdrt/kohei/HeCBench_h200/HeCBench/src/attention-cuda/main 65536 8192 0 1
+# gpu_name: NVIDIA H200
+# preset: nsys-kernel-time
+# profiler_version: NVIDIA Nsight Systems version 2026.2.1.210-262137639646v0
+# profiler_command: /opt/nvidia/hpc_sdk/Linux_x86_64/26.5/compilers/bin/nsys profile --trace=cuda --sample=none --cpuctxsw=none --stats=false --force-overwrite=true --output /lvs0/dne0/rccs-fnmodeling/yoshida/HeCBench/H200/nsys-kernel-time/attention-cuda__894646bb /lvs0/dne1/rccs-hpbdrt/kohei/HeCBench_h200/HeCBench/src/attention-cuda/main 65536 8192 0 1
+# timestamp: 2026-09-26T14:46:37.958184
+kernel_name,duration_ns
+"attention_kernel1(const float *, const float *, float *, float *, int, int)",2276996
+"attention_kernel2(const float *, const float *, float *, int)",1504
+"attention_kernel3(const float *, const float *, float *, int, int)",4004583

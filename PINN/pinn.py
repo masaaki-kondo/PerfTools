@@ -1,72 +1,86 @@
-"""v4.5 cross-GPU kernel performance estimator -- CLI (self-contained).
+"""PINN v3.25 -- cross-GPU kernel performance estimator. Self-contained.
 
-v4.5 = v4.1 (no-ET pure NN) + per-prediction CONFIDENCE and error breakdown.
-v4.1 was the released NO-ET pure NN (no Execution Time as a predictive input; no
-analytical formula at runtime -- a plain neural-net forward pass). Same CLI and
-same I/O as v1.5 (predict_v15.py): a drop-in replacement. Fully offline.
+Predicts, for CUDA kernels profiled with ncu on a SOURCE GPU, the execution time, memory throughput, occupancy and
+stall breakdown on a TARGET GPU (a real GPU, or a hypothetical one described by its specs). See README.md.
 
-TWO INPUT MODES (every input is supplied; no hidden lookups except the SOURCE GPU's
-datasheet bw/peak, looked up by src_gpu name for the roofline terms):
-  1. full input via CLI options -- one prediction, every column is a flag.
-  2. --csv FILE --row {N|all} -- a CSV (NCU + SRC/TGT spec columns per row).
-  Build a CSV from raw NCU + the spec sheet with MLP_NN/examples/prepare_data.py.
+Lineage: PINN v3.25 = the v3.22 inference code with the weights of the v3.25 production run (3 seeds).
 
-OUTPUT
-  --out pred.csv   estimated metrics (+ roofline quantities) per kernel.
-  --log run.log    plain-text run summary (also to stderr).
+INPUT   --csv FILE --row {N|all}: one row per kernel (ncu metrics + SRC/TGT spec columns), built with
+        examples/prepare_data.py; or every column as a CLI option (one prediction).
+        Specs come from data/v4/gpu_microarch_specs.csv; actual values (operating clocks, DRAM latency, ...) from
+        runtime_inputs_training.csv in the weights folder (v3.25/), plus any --runtime-inputs FILE.
+OUTPUT  --out pred.csv: predicted metrics (+ roofline quantities) per kernel. --confidence adds confidence levels.
 
-EXAMPLES
-  python MLP_NN/obsolete/v4.46/predict_v446.py \
-         --csv MLP_NN/examples/example_inputs.csv --row all --out pred.csv
-  python MLP_NN/obsolete/v4.46/predict_v446.py \
-         --csv MLP_NN/examples/example_inputs.csv --row 3 --out row3.csv
+    python PINN/pinn.py --csv examples/kernel_inputs.csv --row all --out pred.csv
 """
+# RELEASE: default weights = v3.25/ in this folder (the v3.25 production run, 3 seeds). In-range routing is OFF.
 import os, sys, csv, re, pickle, argparse, datetime
-# v4.5 adds Metro's L1/L2 cache HIT RATES to the workload features. The flag must be
-# set BEFORE v15_core is imported, because the feature list is built at import time.
+# v3.1 adds Metro's L1/L2 cache HIT RATES to the workload features. The flag must be
+# set BEFORE network is imported, because the feature list is built at import time.
 os.environ["HITRATES"] = "1"
-# v4.42: v4.41 (fixed nsys labels) + the PINN floors: latency anchor and instruction anchor,
-# so the latency class stays pinned out of the trained envelope (v4.41 16x LAT 0.792, non-monotone).
-# v4.46 (2026-10-15) = v4.42 recipe (v4.41 + LAT_ANCHOR=1 INST_ANCHOR=2) with the artifact trained on the NAME-FIXED
-# labels (v4.42/v442nf_artifact) promoted as the version default v446_artifact. LOGO native truth: H200 18.5, H100 23.9,
-# A100 36.0, GH200 30.2, L40S 50.1, GB200 47.2 (6-fold mean 34.3); in-sample 18.9; 16x far field .128/.146/.138.
-os.environ["LOG_SPECS"] = "1"
 os.environ["LAT_ANCHOR"] = "1"
-# v4.46 (2026-10-15) = v4.43 recipe + WAVE_ANCHOR=1 (one-wave floor inside t_roof, see data_pipeline_v2.t_wave_of).
+# v3.22 (2026-10-15) = v3.19 recipe + WAVE_ANCHOR=1 (one-wave floor: t >= ET_src / max(waves_src, 1) x per-SM ratio,
+# inside t_roof for the physics loss, the collocation grid and inference) + PINN_GRID extended to x256 (the x128
+# far-field turn-up of v3.19 was the x32 grid edge). Artifacts: v322_artifact (dummy / unseen) + v322_inrange_artifact.
 os.environ["INST_ANCHOR"] = "2"
-# v4.46 (2026-10-15) = v4.44 recipe (wave floor C=0.5) trained on ALL store data (data/20261015_store_wide.zip incl. MIG
-# 64-SM cell, USE_MIG_4G=1) + B300 as an nsys-only target (INCLUDE_B300=1). LOGO: 7 folds incl. b300.
-# RELEASE 2026-10-16 (public): weights in v446_artifact/; specs from data/obsolete/gpu_microarch_specs_v3.csv; actual values
-# from runtime_inputs_training.csv (+ --runtime-inputs). See README.md in this folder.
-# v4.46 (2026-10-16) = v4.45 + distillation ON with roofline single-axis labels (ROOFLINE_SLOPES=1, NO_DISTILL=0,
-# SYN_AXIS to 32x). Training-only change; inference identical to v4.45.
+# v3.22 (2026-10-15) = v3.20 recipe (wave floor C=0.5, grid x256) trained on ALL store data (data/20261015_store_wide.zip:
+# every full ncu run of A100/H200/GH200/L40S + MIG 16/32/64-SM cells, USE_MIG_4G=1) + B300 as an nsys-only TARGET
+# (INCLUDE_B300=1; see data_pipeline_v2.nsys_only_target). LOGO: 7 folds (h200 h100 a100 gh200 l40s gb200 b300).
+# v3.22 (2026-10-15) = v3.21 + ROOFLINE_SLOPES=1 (training only: per-axis slope targets = roofline asymptotes instead of the
+# confounded fit). Inference identical to v3.21. Single-axis sweeps (scale_gpu_sweep AXIS=bw|comp|sm) are the acceptance test.
 os.environ["WAVE_ANCHOR"] = "1"            # one-wave floor inside t_roof (trained with it)
 os.environ["WAVE_ANCHOR_C"] = "0.5"        # trained at C=0.5 (data-supported: 3.4% of real rows below it, vs 22% at C=1)
 os.environ["SPEC_CLOCK"] = "operating"      # peaks at the clock the labels were measured at (2026-10-15)
 os.environ["MEM_CAP"] = "1"                 # memory-efficiency cap at inference (L40S 58.3 -> 46.9; see data_pipeline_v2.t_memcap_of)
 os.environ.setdefault("COMP_CAP", "1")        # compute-saturation cap at inference (data_pipeline_v2.t_compcap_of), 2026-10-16
+os.environ.setdefault("AT_BUSY_SMS", "1")             # per-SM bandwidth over busy SMs, hypothetical targets only (data_pipeline_v2.busy_on), 2026-10-18
 os.environ.setdefault("AXIS_TRANSPORT", "1")          # single-axis extrapolation fix (data_pipeline_v2.axis_weight / REF_BUILDER), 2026-10-16
+# v3.18 (2026-10-07) = v3.17 trained with SPEC_DROPOUT=0.2 (spec-feature dropout, training only) and scored
+# with the out-of-envelope residual cap (TRUST_MODE=cap: see pinn_core.predict_seeds). LOGO vs v3.17, native
+# truth: H200 27.2 -> 19.5, H100 27.9 -> 22.5, A100 51.6 -> 34.2, GH200 31.0 -> 32.3, L40S 47.9 -> 47.9,
+# GB200 54.7 -> 46.8; in-sample 9.8 -> 16.7 (use v3.17 for targets that are in the training set).
+# v3.22 (2026-10-15) = v3.18 recipe retrained on the NAME-FIXED labels (2026-10-09 nsys/ncu kernel-name join fix;
+# pre-fix artifacts stay under v3.18/). Weights = v3.18/v318nf_artifact (dummy / unseen targets, spec dropout 0.2 +
+# trust cap) and v3.18/v317nf_inrange_artifact (in-range targets, v3.17 recipe), promoted here as v322_artifact and
+# v322_inrange_artifact. LOGO native truth: H200 18.5, H100 23.7, A100 34.4, GH200 31.0, L40S 47.9, GB200 48.9
+# (6-fold mean 34.1); in-sample 11.4 (routed); 16x far field COMM/COMP/LAT .052/.058/.038 (ideal .062).
+os.environ.setdefault("TRUST_Z", "6,12")
+os.environ.setdefault("TRUST_MODE", "cap")
+# v3.18: v3.15 (PINN, native labels) + latency floor + instruction floor on t_roof (the far-field blow-up is driven by zero-flop kernels)
 HERE = os.path.dirname(os.path.abspath(__file__))
-sys.path.insert(0, os.path.join(HERE, "..", "..", "..")); sys.path.insert(0, HERE)   # repo root (shared MLP_NN package) + own v15_core copy
+sys.path.insert(0, HERE)   # own network.py and data_pipeline_v2.py copies
 # Spec sheet (specs only) + runtime inputs (actual values: training defaults, then the user's --runtime-inputs files).
-os.environ.setdefault("GPU_SPEC_SHEET", os.path.join(HERE, "..", "..", "..", "data", "obsolete", "gpu_microarch_specs_v3.csv"))
-_ri = [os.path.join(HERE, "runtime_inputs_training.csv")]
+os.environ.setdefault("GPU_SPEC_SHEET", os.path.join(HERE, "..", "data", "v4", "gpu_microarch_specs.csv"))
+# The weights folder (--artifact, default v3.25/) carries the runtime inputs its training used.
+_art = os.path.join(HERE, "v3.25")
+for _i, _a in enumerate(sys.argv):
+    if _a == "--artifact" and _i + 1 < len(sys.argv):
+        _art = os.path.abspath(sys.argv[_i + 1])
+    elif _a.startswith("--artifact="):
+        _art = os.path.abspath(_a.split("=", 1)[1])
+if not os.path.exists(os.path.join(_art, "runtime_inputs_training.csv")):   # e.g. a held-out fold: same training GPUs
+    _art = os.path.join(HERE, "v3.25")
+_ri = [os.path.join(_art, "runtime_inputs_training.csv")]
 for _i, _a in enumerate(sys.argv):
     if _a == "--runtime-inputs" and _i + 1 < len(sys.argv):
         _ri.append(os.path.abspath(sys.argv[_i + 1]))
+    elif _a.startswith("--runtime-inputs="):
+        _ri.append(os.path.abspath(_a.split("=", 1)[1]))
 os.environ["GPU_RUNTIME_INPUTS"] = os.pathsep.join(_ri)
 import numpy as np
 import pandas as pd
 import torch
-import v15_core as core
-from MLP_NN import data_pipeline_v2 as dp   # spec_delta / GPU dicts (single source of truth)                    # feature extractors / MultiBranchMLP (shared)
-import v446_core                            # v4.5 no-ET inference + confidence
+import network as core
+import data_pipeline_v2 as dp   # spec_delta / GPU dicts (single source of truth)                    # feature extractors / MultiBranchMLP (shared)
+import pinn_core                            # v3 no-ET inference + confidence
 
 SPEC = core.GPU_SPEC_FEATURES
 SRC_PFX, TGT_PFX = "SRC ", "TGT "
+# ISSUE_FLOOR (instruction-issue limit, 0 = off) is read by the core, v*_core.predict_seeds (2026-10-21)
 OUT_COLS = ["Execution Time [ns]", "Memory Throughput [%]", "Achieved Occupancy",
             "brk_memory", "brk_pipeline_contention", "brk_sync",
-            "brk_scheduling_overhead", "t_mem_ns", "t_comp_ns", "t_roof_ns", "efficiency_eta", "trust_w"]
+            "brk_scheduling_overhead", "running_cycles", "exec_cycles", "cyc_running", "cyc_memory", "cyc_pipeline_contention",
+            "cyc_sync", "cyc_scheduling_overhead", "t_mem_ns", "t_comp_ns", "t_roof_ns", "efficiency_eta", "trust_w", "issue_limited"]
 FP_COUNTERS = [
     "Predicated-On FFMA Operations Per Cycle [inst]",
     "Predicated-On FADD Thread Instructions Executed Per Cycle [inst/cycle]",
@@ -127,7 +141,7 @@ def _is_unscaled(row, gpu, pfx):
             and near(TGT_PFX + "n_sms", hw["n_sms"])):
         return True
     # 2026-10-16: also the REAL GPU when the row carries the values of a published spec sheet for it (inputs built
-    # from data/gpu_microarch_specs*.csv, e.g. the public example_inputs.csv: GB200 8000 GB/s vs the training 6580).
+    # from data/gpu_microarch_specs*.csv, e.g. examples/kernel_inputs.csv: GB200 8000 GB/s vs the training 6580).
     return any(near(TGT_PFX + "dram_bw", bw) and near(TGT_PFX + "peak_fp32", f32) and near(TGT_PFX + "n_sms", sms)
                for bw, f32, sms in _sheet_refs().get(g, []))
 
@@ -139,7 +153,7 @@ def _sheet_refs():
     if _SHEET_REFS is None:
         import csv, glob
         _SHEET_REFS = {}
-        root = os.path.join(HERE, "..", "..", "..", "data")
+        root = os.path.join(HERE, "..", "data")
         paths = sorted(set(sum((glob.glob(os.path.join(root, d, "gpu_microarch_specs*.csv")) for d in ("", "v4", "obsolete")), [])
                            + [os.environ.get("GPU_SPEC_SHEET", "")]) - {""})   # every shipped sheet: data/, data/v4/, data/obsolete/
         for p in paths:
@@ -247,9 +261,13 @@ def _build_sample(srow, src_gpu, tgt_gpu, src_vec, tgt_vec, peaks, reg_out, brk_
         "src_dur_ns": float(pd.to_numeric(s.get("Execution Time"), errors="coerce")),
         "src_mem_pct": float(pd.to_numeric(s.get("Memory Throughput [%]"), errors="coerce")),
         "src_waves": float(pd.to_numeric(s.get("Waves Per SM"), errors="coerce")),      # WAVE_ANCHOR / WAVE_CLAMP
+        "src_grid": float(pd.to_numeric(s.get("Grid Size"), errors="coerce")),          # AT_BUSY_SMS (2026-10-18)
+        "src_issued_inst": float(pd.to_numeric(s.get("Issued Instructions [inst]"), errors="coerce")),   # running_cycles output (2026-10-18)
         "src_dram_latency": dp.GPU_LATENCY_BW_SPECS.get(str(src_gpu).lower(), {}).get("dram_latency_ns", float("nan")),
         "target_dram_latency": float(s.get(TGT_PFX + "DRAM Latency [ns]", float("nan")) or float("nan")),
         "src_n_sms": dp.GPU_HW_FALLBACK.get(str(src_gpu).lower(), {}).get("n_sms", float("nan")),
+        "src_clock_ncu": (dp.GPU_CLOCKS.get(str(src_gpu).lower(), {}).get("ncu") or float("nan")),       # LAT_CLOCK only (2026-10-17)
+        "target_clock_op": (dp.GPU_CLOCKS.get(str(tgt_gpu).lower(), {}).get("operating") or float("nan")),
         "target_n_sms": (float(s[TGT_PFX + "n_sms"]) if (TGT_PFX + "n_sms") in s.index and s[TGT_PFX + "n_sms"] == s[TGT_PFX + "n_sms"]
                          else (peaks["dram_bw"] / float(s.get(TGT_PFX + "DRAM BW per SM [byte/s/SM]", float("nan")))
                                if float(s.get(TGT_PFX + "DRAM BW per SM [byte/s/SM]", 0) or 0) > 0 else float("nan"))),
@@ -258,33 +276,54 @@ def _build_sample(srow, src_gpu, tgt_gpu, src_vec, tgt_vec, peaks, reg_out, brk_
 
 
 def to_rows(P, samples):
-    et = P["et_p"]
+    et = np.array(P["et_p"], float); mem = np.array(P["mem"], float)
+    # instruction-issue limit: applied in the core (predict_seeds, 2026-10-21); et/mem arrive already limited
+    hit = np.asarray(P.get("issue_limited", np.zeros(len(et), bool)), bool)
+    pinst = np.array([s.get("target_peak_inst", np.nan) for s in samples], float)
+    iss = np.array([s.get("src_issued_inst", np.nan) for s in samples], float)
     b = np.array([s["roofline_bytes"] for s in samples]); bw = np.array([s["target_dram_bw"] for s in samples])
     f32 = np.array([s["roofline_fp32_flops"] for s in samples]); f64 = np.array([s["roofline_fp64_flops"] for s in samples])
     p32 = np.array([s["target_peak_fp32"] for s in samples]); p64 = np.array([s["target_peak_fp64"] for s in samples])
     with np.errstate(divide="ignore", invalid="ignore"):
         t_mem = b / bw * 1e9; t_comp = np.fmax(f32 / p32, f64 / p64) * 1e9
         t_roof = np.fmax(t_mem, t_comp); eta = t_roof / et
+    # execution-cycle breakdown (2026-10-19): running + stall = 1; see PROVENANCE
+    nsm = np.array([s.get("target_n_sms", np.nan) for s in samples], float)
+    stall = [j for j, b in enumerate(core.BRK) if b != "running"]
+    with np.errstate(divide="ignore", invalid="ignore"):
+        ecyc = et * 1e-9 * pinst / (4.0 * nsm)
+        run = np.minimum(iss / (et * 1e-9 * pinst), 1.0)
+        sh = P["brk"][:, stall] / P["brk"][:, stall].sum(axis=1, keepdims=True)
     out = []
     for i, s in enumerate(samples):
         out.append({"kernel_name": s["kernel_name"], "src_gpu": s["src_gpu"], "tgt_gpu": s["tgt_gpu"],
-                    "Execution Time [ns]": float(et[i]), "Memory Throughput [%]": float(P["mem"][i]),
+                    "Execution Time [ns]": float(et[i]), "Memory Throughput [%]": float(mem[i]),
                     "Achieved Occupancy": float(P["occ"][i]),
                     **{f"brk_{core.BRK[j]}": float(P["brk"][i, j]) for j in range(len(core.BRK))},
+                    "running_cycles": float(s.get("src_issued_inst", float("nan"))),
+                    "exec_cycles": float(ecyc[i]), "cyc_running": float(run[i]),
+                    **{f"cyc_{core.BRK[j]}": float((1.0 - run[i]) * sh[i, k]) for k, j in enumerate(stall)},
                     "t_mem_ns": float(t_mem[i]), "t_comp_ns": float(t_comp[i]),
                     "t_roof_ns": float(t_roof[i]), "efficiency_eta": float(eta[i]),
-                    "trust_w": float(P.get("trust_w", np.ones(len(samples)))[i])})
+                    "trust_w": float(P.get("trust_w", np.ones(len(samples)))[i]), "issue_limited": int(hit[i])})
     return out
 
 
 PROVENANCE = [
-    "# v4.5 cross-GPU kernel estimator (no-ET NN + confidence) -- output",
+    "# PINN v3.25 cross-GPU kernel estimator (no-ET NN + confidence) -- output",
     "# INPUT SOURCES: kernel stats = NCU on the SOURCE GPU; GPU specs = spec sheet (SRC/TGT cols);",
     "#   roofline terms COMPUTED in-tool (bytes=MemThr[byte/s]*ExecTime; flops=(2*FFMA+FADD+FMUL)*cycles).",
-    "# MODEL: v4.5 -- Execution Time is NOT a predictive input; inference is a plain NN forward pass.",
-    "# CONFIDENCE (--confidence): conf_* from 5-seed ensemble spread + roofline consistency; exp_err_* = measured typical error for that bucket.",
-    "# OUTPUTS: ExecTime/Mem%/Occupancy/brk_* = v4.5 predictions; t_*_ns + efficiency_eta = roofline.",
-    "# trust_w: 1 = target GPU inside the trained spec envelope; <1 = outside (TRUST_Z), prediction blended toward the physics anchor.",
+    "# MODEL: PINN v3.25 -- Execution Time is NOT a predictive input; inference is a plain NN forward pass.",
+    "# CONFIDENCE (--confidence): conf_* from 3-seed ensemble spread + roofline consistency; exp_err_* = measured typical error for that bucket.",
+    "# OUTPUTS: ExecTime/Mem%/Occupancy/brk_* = PINN v3.25 predictions; t_*_ns + efficiency_eta = roofline.",
+    "# running_cycles: warp-cycles in ncu's Selected (issuing) state = issued warp instructions of the SOURCE run (1 cycle each);",
+    "#   exact for a target with the same SM architecture, NaN when the input has no 'Issued Instructions [inst]'.",
+    "# issue_limited: 1 = predicted time raised to the instruction-issue limit, issued / (4 x SMs x clock); Mem% scaled to match.",
+    "# exec_cycles / cyc_*: execution-cycle breakdown, running + stall = 1 (fractions of exec_cycles). Per scheduler every cycle",
+    "#   either issues (running) or not (stall): cyc_running = issued warp inst / (time x peak issue rate = 4 schedulers x SMs x",
+    "#   clock), = ncu issued / Total SMSP Elapsed Cycles (median ratio 1.000-1.003 on 6,445 ncu runs, 9 GPUs); the other",
+    "#   cyc_* = (1 - cyc_running) x the predicted stall shares. exec_cycles = time x clock (clock = target peak_inst / 4 / SMs).",
+    "#   cyc_* are NaN without an Issued Instructions [inst] input (exec_cycles is always given); exact issued count only for a same-architecture target.",
 ]
 
 
@@ -295,14 +334,71 @@ def _to_num(v):
         return v
 
 
+# ROUTER (2026-10-08): v3.17 and v3.18 sit at two ends of one trade-off -- spec dropout (v3.18) buys
+# extrapolation to GPUs the model never saw (LOGO H200 27.2 -> 19.5, A100 51.6 -> 34.2) at the cost of
+# accuracy on GPUs it did see (in-sample 9.8 -> 16.7). One set of weights cannot have both (the dropout-rate
+# sweep moved along that line, never off it), so the merged estimator picks per ROW by the TARGET GPU:
+#   target in the training set  -> in-range artifact (v3.17 recipe), no trust cap
+#   anything else (dummy / new) -> v3.18 artifact, out-of-envelope residual cap on
+TRAINED_TARGETS = {"a100", "h100", "gb200", "h200", "gh200", "l40s", "b300",      # b300: trained target from v3.22
+                   "h100_mig_1g", "h100_mig_2g", "h100_mig_3g"}      # production pool (USE_MIG_4G=0)
+_PER_ROW = ("trust_w", "et_p", "mem", "occ", "brk", "troof", "issue_limited")
+_PER_SEED = ("et_seeds", "mem_seeds", "occ_seeds", "brk_seeds", "log_et_seeds")
+
+
+def _is_trained(tgt):
+    return str(tgt).strip().lower().replace("-", "_").replace(" ", "_") in TRAINED_TARGETS
+
+
+def route_predict(models, meta, samples, args):
+    n = len(samples)
+    inr = None; ia = args.inrange_artifact
+    if ia is None and os.path.realpath(args.artifact) == os.path.realpath(os.path.join(HERE, "v3.25")):
+        ia = None   # release 2026-10-16: in-range routing OFF until a v3.21 in-range model is tested (pass --inrange-artifact to opt in)
+    if not args.no_route and ia and os.path.exists(os.path.join(ia, "meta.pkl")):
+        inr = pinn_core.load(ia)
+    known = np.array([inr is not None and _is_trained(s["tgt_gpu"]) for s in samples], dtype=bool)
+    if not known.any():
+        return pinn_core.predict_seeds(models, meta, samples), ["PINN v3.25"] * n
+    parts = {}
+    saved = {k: os.environ.pop(k, None) for k in ("TRUST_Z", "TRUST_MODE")}   # in-range: no cap
+    try:
+        parts[True] = pinn_core.predict_seeds(inr[0], inr[1], [s for s, k in zip(samples, known) if k])
+    finally:
+        for k, v in saved.items():
+            if v is not None: os.environ[k] = v
+    if (~known).any():
+        parts[False] = pinn_core.predict_seeds(models, meta, [s for s, k in zip(samples, known) if not k])
+    R = {}
+    for key in parts[True]:
+        a = np.asarray(parts[True][key])
+        if key in _PER_ROW:
+            out = np.empty((n,) + a.shape[1:], dtype=a.dtype); out[known] = a
+            if False in parts: out[~known] = np.asarray(parts[False][key])
+        elif key in _PER_SEED:
+            if False in parts and np.asarray(parts[False][key]).shape[0] != a.shape[0]:
+                R[key] = None; continue          # different seed counts: per-seed outputs not mergeable
+            out = np.empty((a.shape[0], n) + a.shape[2:], dtype=a.dtype); out[:, known] = a
+            if False in parts: out[:, ~known] = np.asarray(parts[False][key])
+        else:
+            raise KeyError(f"router: unknown predict_seeds output {key!r}")
+        R[key] = out
+    return R, ["PINN v3.25-inrange" if k else "PINN v3.25" for k in known]
+
+
 def main():
     ap = argparse.ArgumentParser(
-        description="v4.5 cross-GPU kernel estimator (no-ET NN + confidence). Two input modes: "
+        description="PINN v3.25 cross-GPU kernel estimator (no-ET NN + confidence). Two input modes: "
                     "(1) full input via CLI options, or (2) --csv FILE [--row N].")
-    ap.add_argument("--artifact", default=os.path.join(HERE, "v446_artifact"))   # release 2026-10-16: v4.45 weights (see header)
-    ap.add_argument("--out", required=True)
     ap.add_argument("--runtime-inputs", metavar="CSV", action="append",
                     help="your actual GPU values (spec,unit,<GPU columns>) applied on top of runtime_inputs_training.csv; repeatable")
+    ap.add_argument("--artifact", default=os.path.join(HERE, "v3.25"))   # PINN v3.25: the v3.22 inference code with the weights of the v3.25 production run (3 seeds)
+    ap.add_argument("--inrange-artifact", default=None,
+                    help="optional in-range model for TARGET GPUs in the training set; not shipped. Default: none "
+                         "(routing off). A LOGO fold artifact is never routed (the in-range model has seen the "
+                         "held-out GPU, which would leak). See ROUTER below.")
+    ap.add_argument("--no-route", action="store_true", help="use --artifact for every row")
+    ap.add_argument("--out", required=True)
     ap.add_argument("--log")
     ap.add_argument("--no-comments", action="store_true")
     ap.add_argument("--confidence", action="store_true",
@@ -320,13 +416,29 @@ def main():
                                   "or 'all' to predict every data row (the header is metadata)")
     m1 = ap.add_argument_group("Mode 1: full input via CLI options (one prediction)")
     for c in INPUT_COLS:
-        m1.add_argument(_flag(c), dest=_dest(c), metavar="V", help=c)
+        m1.add_argument(_flag(c), dest=_dest(c), metavar="V", help=c.replace("%", "%%"))   # argparse: a literal % must be doubled
     args = ap.parse_args()
 
-    models, meta = v446_core.load(args.artifact)
+    models, meta = pinn_core.load(args.artifact)
     reg_out, brk_out = meta["reg_out"], meta["brk_out"]
-    # sources the pipeline has datasheet values for. v4.42/v4.46 train on H200 / GH200 / L40S as sources too
-    # (INCLUDE_H200=1 INCLUDE_L40S=1), so any pipeline-known source is valid (ported from predict_v318, 2026-10-15).
+    if meta.get("busy_sms_train"):            # trained with the busy-SM floor on every target (AT_BUSY_SMS=2), 2026-10-18
+        dp.AT_BUSY_MODE, dp.AT_BUSY_SMS = "2", True
+    for _k, _a in (("busy_form", "AT_BUSY_FORM"), ("busy_beta", "AT_BUSY_BETA")):   # rule variant the weights were trained with (2026-10-19)
+        if _k in meta: setattr(dp, _a, meta[_k])
+    if "busy_use" in meta: dp.AT_BUSY_USE = set(meta["busy_use"])
+    if "lat_clock_alpha" in meta and "LAT_CLOCK" not in os.environ:   # clock-aware latency floor the weights were trained with (2026-10-20)
+        dp.LAT_CLOCK, dp.LAT_CLOCK_ALPHA = True, float(meta["lat_clock_alpha"])
+    if meta.get("busy_feat"):                 # rule enters as inputs; real targets keep the plain floor they were trained on
+        dp.BUSY_FEAT = True
+        if dp.AT_BUSY_MODE == "2" or os.environ.get("BUSY_FEAT_FLOOR", "1") != "1": dp.AT_BUSY_MODE, dp.AT_BUSY_SMS = "0", False
+        # BUSY_FEAT_FLOOR=1 (default): hypothetical targets still get the busy-SM floor (AT_BUSY_SMS=1)
+    if brk_out == len(core.BRK) + 1:          # 5th breakdown bucket "running" (BRK_RUNNING=1 artifacts)
+        core.BRK = list(core.BRK) + ["running"]
+        dp.BRK_RUNNING = True; dp.STALL_BREAKDOWN_GROUPS.setdefault("running", [])
+        core.compute_breakdown = dp.compute_breakdown   # source breakdown input also has the 5th bucket (= 1 per issued inst)
+        OUT_COLS.insert(OUT_COLS.index("brk_scheduling_overhead") + 1, "brk_running")
+    # sources the pipeline has datasheet values for (src SM count / DRAM latency for the latency floor).
+    # v3.18 trains on H200 / GH200 / L40S as sources too, so they are valid here (2026-10-09).
     known = set(dp.GPU_HW_FALLBACK) & set(dp.GPU_LATENCY_BW_SPECS) & set(dp.GPU_PEAK_SPECS)
 
     cli_given = {DEST2COL[d]: getattr(args, d) for d in DEST2COL if getattr(args, d) is not None}
@@ -362,14 +474,15 @@ def main():
         if spec is None:
             ap.error("input is missing the GPU spec columns (SRC ... / TGT ... / TGT peak_*). "
                      "Every input must be supplied -- in the CSV or as CLI options. "
-                     "Build a CSV with MLP_NN/examples/prepare_data.py.")
+                     "Build a CSV with examples/prepare_data.py.")
         sv, tv, pk = spec
         samples.append(build_sample(row, sg, tg, sv, tv, pk, reg_out, brk_out))
-    R = v446_core.predict_seeds(models, meta, samples)
+    R, routed = route_predict(models, meta, samples, args)
     out_rows = to_rows(R, samples)
+    for r, how in zip(out_rows, routed): r["model_used"] = how
     cols_extra = []
     if args.confidence or args.truth:
-        C = v446_core.confidence(R, samples)
+        C = pinn_core.confidence(R, samples)
         for i, r in enumerate(out_rows):
             for k in ("ExecTime", "Mem%", "Occupancy", "breakdown"):
                 r[f"conf_{k}"] = C[f"conf_{k}"][i]
@@ -377,14 +490,26 @@ def main():
             for k in ("ens_cv_et", "ens_sd_mem", "ens_sd_occ", "ens_sd_brk",
                       "eta", "eta_violation", "log_dist_roof", "mem_consistency"):
                 r[k] = float(C[k][i])
+            r["gpu_distance"] = float(C["gpu_distance"][i]); r["gpu_familiarity"] = str(C["gpu_familiarity"][i])
         cols_extra = ([f"conf_{k}" for k in ("ExecTime", "Mem%", "Occupancy", "breakdown")]
                       + [f"exp_err_{k}" for k in ("ExecTime", "Mem%", "Occupancy", "breakdown")]
                       + ["ens_cv_et", "ens_sd_mem", "ens_sd_occ", "ens_sd_brk",
-                         "eta", "eta_violation", "log_dist_roof", "mem_consistency"])
+                         "eta", "eta_violation", "log_dist_roof", "mem_consistency", "gpu_distance", "gpu_familiarity"])
+    if os.environ.get("PRED_SEED_TIMES") == "1" and R.get("et_seeds") is not None:
+        # per-seed ExecTime [ns] (2026-10-21, opt-in): the spread of the ensemble, e.g. for an app-level seed range.
+        # Same instruction-issue floor as the ensemble answer (applied in the core on the mean only).
+        _es = np.asarray(R["et_seeds"], float)
+        if os.environ.get("ISSUE_FLOOR", "1") == "1":
+            with np.errstate(divide="ignore", invalid="ignore"):
+                _ti = np.array([s.get("src_issued_inst", np.nan) / s.get("target_peak_inst", np.nan) * 1e9 for s in samples], float)
+            _es = np.where(np.isfinite(_ti)[None, :] & (_ti[None, :] > _es), _ti[None, :], _es)
+        for i, r in enumerate(out_rows):
+            r.update({f"et_seed{j}": float(_es[j, i]) for j in range(_es.shape[0])})
+        cols_extra += [f"et_seed{j}" for j in range(_es.shape[0])]
     if args.truth:
-        cols_extra += v446_core.attach_errors(out_rows, args.truth)
+        cols_extra += pinn_core.attach_errors(out_rows, args.truth)
     if args.confidence:
-        v446_core.print_confidence_legend()
+        pinn_core.print_confidence_legend()
         import collections as _c
         sys.stderr.write("\nconfidence of THIS run:\n")
         for _k in ("ExecTime", "Mem%", "Occupancy", "breakdown"):
@@ -394,7 +519,7 @@ def main():
                 f"{_l}={_d.get(_l,0):>5} ({100*_d.get(_l,0)/_n:4.1f}%)"
                 for _l in ("high", "medium", "low")) + "\n")
 
-    cols = ["kernel_name", "src_gpu", "tgt_gpu"] + OUT_COLS + cols_extra
+    cols = ["kernel_name", "src_gpu", "tgt_gpu"] + OUT_COLS + ["model_used"] + cols_extra
     with open(args.out, "w", newline="") as f:
         if not args.no_comments:
             f.write("\n".join(PROVENANCE) + "\n")
@@ -403,12 +528,12 @@ def main():
             w.writerow({c: (f"{r[c]:.6g}" if isinstance(r[c], float) else r[c]) for c in cols})
 
     if args.dump_records:
-        n = core.dump_records(args.dump_records, "v4.5", samples, out_rows,
-                              v446_core._features, core.DERIVED_NAMES_V40, args.no_comments)
+        n = core.dump_records(args.dump_records, "v3", samples, out_rows,
+                              pinn_core._features, core.DERIVED_NAMES_V40, args.no_comments)
         sys.stderr.write(f"records  : {n} rows -> {args.dump_records}\n")
 
-    log = [f"v4.5 cross-GPU estimator (no-ET NN + confidence)  run @ {datetime.datetime.now().isoformat(timespec='seconds')}",
-           f"model    : v4.5  ({meta['seeds']}-seed ensemble)", "specs    : read from the input (SRC/TGT columns/options)",
+    log = [f"v3 cross-GPU estimator (no-ET NN + confidence)  run @ {datetime.datetime.now().isoformat(timespec='seconds')}",
+           f"model    : v3  ({meta['seeds']}-seed ensemble)", "specs    : read from the input (SRC/TGT columns/options)",
            f"mode     : {'CSV' if args.csv else 'CLI'}" + (f", row {args.row}" if args.row else ""),
            f"kernels  : {len(rows_in)}   src->tgt: "
            + ", ".join(f"{sg}->{tg}" for _, sg, tg in rows_in[:4]) + (" ..." if len(rows_in) > 4 else ""),

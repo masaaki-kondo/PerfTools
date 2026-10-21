@@ -1,4 +1,4 @@
-> **Obsolete (2026-10-16)**: superseded by MLP_NN/v4.55 and PINN/v3.25. Kept unchanged for reference; run it from `MLP_NN/obsolete/v2.1/`.
+> **Obsolete (2026-10-16)**: superseded by MLP-NN v4.55 (`MLP_NN/`) and PINN v3.25 (`PINN/`). Kept unchanged for reference; run its commands from the repository root.
 
 # v2.1 -- cross-GPU CUDA kernel performance estimator (hybrid)
 
@@ -16,8 +16,8 @@ neither, use **v4.0** (the shipped model).
 
 ## Quick start
 ```
-python MLP_NN/v2.1/predict_v21.py \
-       --csv MLP_NN/examples/example_inputs.csv --row all --out pred.csv
+python MLP_NN/obsolete/v2.1/predict_v21.py \
+       --csv examples/kernel_inputs.csv --row all --out pred.csv
 ```
 
 ## What it predicts (per kernel)
@@ -38,13 +38,13 @@ variants and is the only one that responds to bandwidth and SM/peak independentl
 ## Two ways to run
 **Mode 1 -- every input as a CLI flag (one prediction):**
 ```
-python MLP_NN/v2.1/predict_v21.py --src-gpu a100 --tgt-gpu gb200 \
+python MLP_NN/obsolete/v2.1/predict_v21.py --src-gpu a100 --tgt-gpu gb200 \
        --execution-time 12345 ... --out one.csv
 ```
 **Mode 2 -- CSV (batch or single row):**
 ```
-python MLP_NN/v2.1/predict_v21.py --csv FILE --row all   --out all.csv
-python MLP_NN/v2.1/predict_v21.py --csv FILE --row 3     --out row3.csv
+python MLP_NN/obsolete/v2.1/predict_v21.py --csv FILE --row all   --out all.csv
+python MLP_NN/obsolete/v2.1/predict_v21.py --csv FILE --row 3     --out row3.csv
 ```
 
 ## Predict for a FUTURE GPU (different specs)
@@ -61,7 +61,7 @@ counters from your real SOURCE profile:
 | `TGT <spec>` (13) | target spec features             | from datasheet           |
 
 ```
-python MLP_NN/v2.1/predict_v21.py --csv one_kernel.csv --row 1 \
+python MLP_NN/obsolete/v2.1/predict_v21.py --csv one_kernel.csv --row 1 \
        --tgt-dram-bw 16e12 --tgt-peak-fp32 160e12 --tgt-peak-fp64 80e12 --out future.csv
 ```
 When the target bandwidth/peak exceeds GB200's, v2.1 applies the calibrated analytical
@@ -70,9 +70,9 @@ out-of-range path.
 
 ## Building an input CSV
 ```
-python MLP_NN/examples/prepare_data.py --src A100,H100,GB200 --n N --out my.csv
+python prepare_data.py --src A100,H100,GB200 --n N --out my.csv   # old builder, not shipped
 ```
-`example_inputs.csv` (all 147 kernels) is provided ready to use.
+`examples/kernel_inputs.csv` (all 147 kernels) is provided ready to use.
 
 ## Input columns (79 per row)
 - metadata: `Kernel Name`, `src_gpu`, `tgt_gpu`
@@ -109,7 +109,7 @@ It writes **predictions only — no ground truth**. To score, compare row-for-ro
 row order) against a truth file of measured TARGET outputs (`S-*`).
 
 ```
-python MLP_NN/v2.1/predict_v21.py --csv inputs.csv --row all \
+python MLP_NN/obsolete/v2.1/predict_v21.py --csv inputs.csv --row all \
        --out preds.csv --dump-records records.csv
 ```
 
@@ -117,15 +117,15 @@ python MLP_NN/v2.1/predict_v21.py --csv inputs.csv --row all \
 
 A row-aligned input + tagged-truth pair is shipped under `data/`:
 
-- `data/raw_inputs_20260522.csv` — raw 79-col wide-form, ready for `--csv`.
-- `data/tagged_ground_truth_20260522.csv` — io_signal-tagged truth
+- `data/obsolete/raw_inputs_20260522.csv` — raw 79-col wide-form, ready for `--csv`.
+- `data/obsolete/tagged_ground_truth_20260522.csv` — io_signal-tagged truth
   (`meta-* + I-* + S-*`), same row order as the inputs.
 
 Coverage: 2486 rows = 9 (src→tgt) pairs across **A100 / H100 / GB200** including
 the three diagonals. GB10 dropped (corrupt byte/s). To score this model:
 
 ```
-python MLP_NN/v2.1/predict_v21.py --csv data/raw_inputs_20260522.csv --row all \
+python MLP_NN/obsolete/v2.1/predict_v21.py --csv data/obsolete/raw_inputs_20260522.csv --row all \
        --out preds.csv --dump-records preds_record.csv
 # row-for-row diff preds_record's O-* against tagged_ground_truth's S-*.
 ```
