@@ -480,10 +480,11 @@ def main():
             for k in ("ens_cv_et", "ens_sd_mem", "ens_sd_occ", "ens_sd_brk",
                       "eta", "eta_violation", "log_dist_roof", "mem_consistency"):
                 r[k] = float(C[k][i])
+            r["gpu_distance"] = float(C["gpu_distance"][i]); r["gpu_familiarity"] = str(C["gpu_familiarity"][i])
         cols_extra = ([f"conf_{k}" for k in ("ExecTime", "Mem%", "Occupancy", "breakdown")]
                       + [f"exp_err_{k}" for k in ("ExecTime", "Mem%", "Occupancy", "breakdown")]
                       + ["ens_cv_et", "ens_sd_mem", "ens_sd_occ", "ens_sd_brk",
-                         "eta", "eta_violation", "log_dist_roof", "mem_consistency"])
+                         "eta", "eta_violation", "log_dist_roof", "mem_consistency", "gpu_distance", "gpu_familiarity"])
     if os.environ.get("PRED_SEED_TIMES") == "1" and R.get("et_seeds") is not None:
         # per-seed ExecTime [ns] (2026-10-21, opt-in): the spread of the ensemble, e.g. for an app-level seed range.
         # Same instruction-issue floor as the ensemble answer (applied in the core on the mean only).

@@ -49,22 +49,34 @@ lines first unless `--no-comments`); `prepare_data.py --out` writes the input CS
 one row per call (application level).
 
 **Confidence (no measurement needed).** `--confidence` adds, per output (ExecTime, Mem%, Occupancy, breakdown),
-`conf_<output>` = `high` / `medium` / `low` and `exp_err_<output>` = the error to expect at that level, plus the raw
-signals (`ens_cv_et`, `ens_sd_*` = disagreement between the ensemble members; `eta`, `eta_violation`, `log_dist_roof`,
-`mem_consistency` = roofline checks; an execution time faster than the roofline is always `low`). The levels and errors are
-calibrated on held-out predictions: the 7 GPUs the model never saw (4,784 kernels for time; 3,877 with a measured target
-profile for the other outputs). Mean error per level:
+`exp_err_<output>` = the error to expect and `conf_<output>` = `high` / `medium` / `low` derived from it (ExecTime:
+<= 16 / <= 25 / > 25 %; Mem%: <= 6 / <= 12 / > 12 pp; occupancy: <= 3 / <= 6 / > 6 pp; breakdown: <= 2 / <= 5 / > 5 pp).
+`exp_err` combines two signals:
 
-| Output | high | medium | low | unit |
+- `gpu_distance` / `gpu_familiarity`: how far the TARGET's specs lie from the GPUs the model was trained on (balance
+  space: bandwidth per SM, FP32 per byte, FP32/FP64, size; about 0 for a training GPU described with its own specs, as prepare_data.py writes them).
+  near < 0.3 <= mid < 1.0 <= far.
+  Examples: a training GPU 0 (near); GH200 144 GB 0.02 (near); H200 x2 0.5 (mid); H200 x8 1.9 (far).
+- the disagreement between the ensemble members (`ens_cv_et`, `ens_sd_*`); within the near and mid bins its top 20% is
+  the low level, the next 20% medium, the rest high. An execution time faster than the roofline gets the low level of its bin.
+
+Calibrated on held-out predictions: the 7 GPUs the model never saw, at their distance from the GPUs each fold trained on
+(H100 0.03, GH200 0.02, H200 0.17 near; GB200 0.49, A100 0.61 mid; L40S, B300 2.29 far). 4,784 kernels for time; 3,877
+with a measured target profile for the other outputs. Mean error, levels high / medium / low:
+
+| Output | near | mid | far | unit |
 |---|---|---|---|---|
-| ExecTime | 17.8 | 24.5 | 33.3 | % (absolute percentage error) |
-| Mem% | 6.2 | 12.5 | 35.9 | percentage points |
-| Occupancy | 3.2 | 6.4 | 42.0 | percentage points |
-| breakdown | 1.5 | 4.8 | 12.3 | percentage points (mean over the 4 shares) |
+| ExecTime | 12.9 / 15.1 / 21.7 | 20.5 / 30.2 / 37.4 | 28.6 | % (absolute percentage error) |
+| Mem% | 4.7 / 5.8 / 8.3 | 8.7 / 10.8 / 12.7 | 36.7 | percentage points |
+| Occupancy | 2.4 / 2.7 / 6.3 | 4.9 / 3.9 / 7.8 | 39.7 | percentage points |
+| breakdown | 1.1 / 2.2 / 4.1 | 1.5 / 3.8 / 6.2 | 12.0 | percentage points (mean over the 4 shares) |
 
-For this model the levels rank the error for every output: `low` carries about 2x (time) to 13x (occupancy) the error
-of `high`. `exp_err` is a typical (mean) error, not a guaranteed interval. The thresholds were set with the held-out models'
-signals and are applied unchanged to the production weights.
+The distance carries most of the information: the mean error grows from near to mid to far for every output. Within
+near and mid the ensemble spread separates the least reliable kernels (low level; mid low can exceed far), though not
+always medium from high (e.g. occupancy in mid). The far bin is calibrated on L40S and B300 for time and on L40S alone
+for the other outputs, so one value is given there. The label follows `exp_err`. Other raw signals: `eta`,
+`eta_violation`, `log_dist_roof`, `mem_consistency` (roofline checks). `exp_err` is a typical (mean) error, not a
+guaranteed interval; beyond the trained range (far) the true error can be larger than the held-out value.
 
 **Spread of the ensemble.** `PRED_SEED_TIMES=1` adds each ensemble member's time (`et_seed<j>`).
 

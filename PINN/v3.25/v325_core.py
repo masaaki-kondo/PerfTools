@@ -300,21 +300,30 @@ def predict_seeds(models, meta, samples, _no_transport=False):
 #   (b) ROOFLINE CONSISTENCY - does the answer obey physics, and how far does it sit
 #       from the roofline floor the model is anchored to
 #
-# CALIBRATION (2026-10-21) on HELD-OUT predictions of PINN v3.25: the 7 leave-one-GPU-out folds (H200, H100, A100, GH200,
-# L40S, GB200, B300), i.e. GPUs the model never saw -- the situation of a user predicting a new GPU. 4,784 kernel rows
-# for Execution Time (truth: nsys / ncu time); 3,877 for Mem% / occupancy / breakdown (truth: the target GPU's own ncu
-# profile of the same run and kernel; B300 has none). Thresholds q60 / q80 of each signal over those rows.
-# Rank correlation signal-vs-error: ExecTime +0.18, Mem% +0.46, Occupancy +0.50, breakdown +0.77.
-#
-# Bucket = top 20% of the signal -> "low", next 20% -> "medium", rest -> "high".
-# `exp_err` is the MEASURED mean held-out error of that bucket, i.e. what to expect on a GPU the model never saw.
-# Read exp_err, not only the label: where exp_err does not rise from high to low, the label does not rank the error.
-CONF_CAL = {
-    #  signal                       q60        q80    exp_err(high, medium, low)   unit
-    "ExecTime": dict(sig="ens_cv_et", q60=0.06808, q80=0.11924, exp=(17.83, 24.46, 33.32), unit="%"),
-    "Mem%": dict(sig="ens_sd_mem", q60=3.01021, q80=8.99044, exp=(6.19, 12.5, 35.9), unit="pp"),
-    "Occupancy": dict(sig="ens_sd_occ", q60=2.59925, q80=17.6027, exp=(3.18, 6.4, 41.96), unit="pp"),
-    "breakdown": dict(sig="ens_sd_brk", q60=1.16216, q80=6.49497, exp=(1.52, 4.81, 12.3), unit="pp"),
+# Calibration: see CONF_CAL2 below (two signals, held-out).
+
+
+# Two-signal confidence (2026-10-21), calibrated on the same held-out folds: exp_err from the TARGET's distance from the
+# trained GPUs x the ensemble spread; conf_<output> from exp_err (cut = high/medium, medium/low boundaries).
+CONF_D_NEAR, CONF_D_FAR = 0.3, 1.0   # gpu_distance bins: near < 0.3 <= mid < 1.0 <= far
+# held-out GPUs: h200 0.169, h100 0.025, a100 0.605, gh200 0.019, l40s 2.289, gb200 0.488, b300 2.289
+CONF_CAL2 = {   # per output: per bin (q60, q80 of the ensemble signal; mean error high / medium / low level), far = one value
+    "ExecTime": dict(sig="ens_cv_et", cut=(16.0, 25.0),
+                near=dict(q60=0.04878, q80=0.07163, exp=(12.95, 15.14, 21.72)),
+                mid=dict(q60=0.0489, q80=0.07872, exp=(20.51, 30.18, 37.36)),
+                far=28.62),
+    "Mem%": dict(sig="ens_sd_mem", cut=(6.0, 12.0),
+                near=dict(q60=2.19567, q80=3.05256, exp=(4.69, 5.77, 8.29)),
+                mid=dict(q60=2.5048, q80=3.85902, exp=(8.69, 10.82, 12.7)),
+                far=36.71),
+    "Occupancy": dict(sig="ens_sd_occ", cut=(3.0, 6.0),
+                near=dict(q60=1.83563, q80=2.59332, exp=(2.43, 2.66, 6.28)),
+                mid=dict(q60=2.23821, q80=3.24805, exp=(4.91, 3.92, 7.76)),
+                far=39.66),
+    "breakdown": dict(sig="ens_sd_brk", cut=(2.0, 5.0),
+                near=dict(q60=0.69117, q80=1.24185, exp=(1.1, 2.25, 4.08)),
+                mid=dict(q60=0.83998, q80=1.30465, exp=(1.52, 3.81, 6.15)),
+                far=11.98),
 }
 
 
@@ -323,11 +332,12 @@ def confidence(R, samples):
 
     Returns per-sample arrays: the raw signals (ens_cv_et / ens_sd_mem / ens_sd_occ /
     ens_sd_brk / eta / eta_violation / log_dist_roof / mem_consistency) plus, per output,
-    conf_<output> in {high, medium, low} and exp_err_<output> (see CONF_CAL).
+    gpu_distance / gpu_familiarity (near / mid / far) and, per output, exp_err_<output> (CONF_CAL2) and
+    conf_<output> in {high, medium, low} derived from it.
 
-    A physics violation (eta > 1: predicted faster than the roofline allows) forces 'low'
-    on Execution Time no matter how much the seeds agree -- the failure mode ensemble
-    variance alone cannot see.
+    A physics violation (eta > 1: predicted faster than the roofline allows) puts Execution Time in the
+    least reliable level of its familiarity bin (near / mid) however much the seeds agree; in the far bin
+    every row already gets the far value. conf_<output> follows exp_err.
     """
     et_p = np.asarray(R["et_p"], float)
     troof = np.asarray(R["troof"], float)
@@ -350,16 +360,45 @@ def confidence(R, samples):
         implied = byts / (et_p * 1e-9) / bw * 100.0
         out["mem_consistency"] = np.abs(np.asarray(R["mem"], float) - np.clip(implied, 0, 100))
 
-    for name, c in CONF_CAL.items():
-        v = np.asarray(out[c["sig"]], float)
-        lab = np.where(~np.isfinite(v), "unknown",
-                       np.where(v >= c["q80"], "low", np.where(v >= c["q60"], "medium", "high")))
-        if name == "ExecTime":                      # physics veto
-            lab = np.where(out["eta_violation"] == 1, "low", lab)
-        exp = np.select([lab == "high", lab == "medium", lab == "low"], list(c["exp"]), default=np.nan)
-        out[f"conf_{name}"] = lab
+    # GPU-level signal: distance of the TARGET from the GPUs the model was trained on (balance space + size, as
+    # AXIS_TRANSPORT). The ensemble cannot see an error shared by all members on an unfamiliar GPU; this can.
+    dist = gpu_distance(samples); out["gpu_distance"] = dist
+    fam = np.where(~np.isfinite(dist), "unknown", np.where(dist < CONF_D_NEAR, "near", np.where(dist < CONF_D_FAR, "mid", "far")))
+    out["gpu_familiarity"] = fam
+    for name, c in CONF_CAL2.items():
+        v = np.asarray(out[c["sig"]], float); exp = np.full(len(v), np.nan)
+        for g in ("near", "mid"):                   # within a familiarity bin the ensemble spread ranks the error
+            k = (fam == g) & np.isfinite(v)
+            lvl = np.where(v >= c[g]["q80"], 2, np.where(v >= c[g]["q60"], 1, 0))
+            if name == "ExecTime":                  # physics veto: faster than the roofline = least reliable level
+                lvl = np.where(out["eta_violation"] == 1, 2, lvl)
+            exp = np.where(k, np.asarray(c[g]["exp"])[lvl], exp)
+        exp = np.where(fam == "far", c["far"], exp)  # far: one held-out value (the spread does not rank the error there)
+        lo, hi = c["cut"]
         out[f"exp_err_{name}"] = exp
+        out[f"conf_{name}"] = np.where(~np.isfinite(exp), "unknown", np.where(exp <= lo, "high", np.where(exp <= hi, "medium", "low")))
     return out
+
+
+def gpu_distance(samples):
+    """Distance of each sample's target GPU from the nearest GPU the model was trained on: max |difference| of the
+    log balance coordinates (bandwidth/SM, FP32/byte, FP32/FP64, size), plus how far the SM count lies outside the trained
+    range (log). 0 for a training GPU. Same measure as data_pipeline_v2.axis_weight (AXIS_TRANSPORT)."""
+    H, P = _dp.GPU_HW_FALLBACK, _dp.GPU_PEAK_SPECS
+    names = [g for g in H if g in P and g != "gb10"]
+    pts = np.array([_dp._balance(H[g]["dram_bw"], P[g]["peak_fp32"], P[g]["peak_fp64"], H[g]["n_sms"]) for g in names])
+    sms = [float(H[g]["n_sms"]) for g in names]; nlo, nhi = min(sms), max(sms)
+    d = np.full(len(samples), np.nan)
+    for i, s in enumerate(samples):
+        try:
+            nt = float(s["target_n_sms"]) if np.isfinite(float(s.get("target_n_sms", np.nan))) else \
+                 float(H.get(str(s.get("tgt_gpu", "")).lower(), {}).get("n_sms", np.nan))
+            bt = _dp._balance(float(s["target_dram_bw"]), float(s["target_peak_fp32"]), float(s["target_peak_fp64"]), nt)
+        except (KeyError, TypeError, ValueError):
+            continue
+        if np.all(np.isfinite(bt)):
+            d[i] = max(float(np.min(np.max(np.abs(pts - bt[None, :]), axis=1))), np.log(nt / nhi), np.log(nlo / nt), 0.0)
+    return d
 
 
 BRK_NAMES = ["memory", "pipeline_contention", "sync", "scheduling_overhead"]
@@ -429,21 +468,24 @@ CONF_LEGEND = [
     "",
     "  B) ROOFLINE CONSISTENCY -- the prediction checked against physics.",
     "     eta = t_roof / ExecTime must lie in (0, 1]: a kernel cannot run faster than",
-    "     the roofline allows. eta > 1 is physically impossible and forces conf=low",
-    "     however much the seeds agree -- the failure mode variance alone cannot see.",
+    "     the roofline allows. eta > 1 is physically impossible: ExecTime then takes",
+    "     the least reliable level of its familiarity bin, however much the seeds agree.",
     "       eta              predicted efficiency (must be <= 1)",
     "       eta_violation    1 = impossible prediction",
     "       log_dist_roof    distance of the answer from the roofline floor",
     "       mem_consistency  predicted Mem% vs bytes/(ExecTime*BW), an internal check",
     "",
-    "Reported per output: conf_<output> = high | medium | low, and exp_err_<output> =",
-    "the MEASURED mean error of that bucket (top 20% of the signal -> low, next 20% ->",
-    "medium, rest -> high). Calibrated on HELD-OUT predictions (7 GPUs the model never",
-    "saw; 4,784 kernels for time, 3,877 for the others). Mean error high / medium / low: ExecTime 17.8 / 24.5 / 33.3 %,",
-    "Mem% 6.2 / 12.5 / 35.9 pp, occupancy 3.2 / 6.4 / 42.0 pp, breakdown 1.5 / 4.8 / 12.3 pp.",
-    "Use exp_err: where it does not rise from high to low, the label does not rank the",
-    "error. Ensemble variance measures seed disagreement, NOT correctness; exp_err is a",
-    "typical (mean) error, not a guaranteed interval.",
+    "Reported per output: exp_err_<output> = the error to expect, and conf_<output> = high |",
+    "medium | low derived from it. exp_err combines two signals, calibrated on HELD-OUT",
+    "predictions (7 GPUs the model never saw): gpu_familiarity (near / mid / far = how far",
+    "the target's specs lie from the trained GPUs, gpu_distance) and, within near and mid,",
+    "the ensemble spread (top 20% -> low level, next 20% -> medium, rest -> high).",
+    "Mean held-out error by familiarity, level high/medium/low:",
+    "  ExecTime  near 12.9/15.1/21.7, mid 20.5/30.2/37.4, far 28.6 %",
+    "  Mem%      near 4.7/5.8/8.3, mid 8.7/10.8/12.7, far 36.7 pp",
+    "  Occupancy near 2.4/2.7/6.3, mid 4.9/3.9/7.8, far 39.7 pp",
+    "  breakdown near 1.1/2.2/4.1, mid 1.5/3.8/6.2, far 12.0 pp",
+    "exp_err is a typical (mean) error, not a guaranteed interval.",
 ]
 
 
