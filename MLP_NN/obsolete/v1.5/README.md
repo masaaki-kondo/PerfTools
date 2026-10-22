@@ -1,5 +1,5 @@
 > **Obsolete (2026-10-16)**: its input builder (`prepare_data.py --raw ... --n`) is no longer shipped; examples/kernel_inputs/prepare_data.py builds inputs for the current models.
-> superseded by MLP-NN v4.55 (`MLP_NN/`) and PINN v3.25 (`PINN/`). Kept unchanged for reference; run its commands from the repository root.
+> superseded by MLP-NN v4.55 (`MLP_NN/`) and PINN v3.26 (`PINN/`). Kept unchanged for reference; run its commands from the repository root.
 
 # Cross-GPU CUDA Kernel Performance Estimator (v1.5)
 

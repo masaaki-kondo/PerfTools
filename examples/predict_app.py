@@ -54,7 +54,7 @@ import pandas as pd
 
 # Published models: (predictor script, artifact) relative to the repo root.
 MODELS = {"mlpnn": ("MLP_NN/mlp-nn.py", "MLP_NN/v4.55"),   # MLP-NN v4.55
-          "pinn":  ("PINN/pinn.py", "PINN/v3.25")}         # PINN v3.25
+          "pinn":  ("PINN/pinn.py", "PINN/v3.26")}         # PINN v3.26
 
 # Base GPUs: the GPUs with ncu training profiles (B300 has nsys only, so it cannot be a base).
 # ARCH = the 5 NCU-architectural spec inputs (warps per scheduler, active warps per SM / per scheduler, shared-memory
@@ -68,7 +68,7 @@ GB, TF, MB = 1e9, 1e12, 1024 ** 2          # sheet units -> SI (MB as the pipeli
 
 # App-level held-out error: 10th / 90th percentile of predicted / measured app time over the 7 leave-one-GPU-out folds
 # (1,223 app runs; app time = kernel time x launches, as here). Measured time likely in [pred / p90, pred / p10].
-BAND = {"mlpnn": (0.7172, 1.2869), "pinn": (0.6540, 1.2677)}
+BAND = {"mlpnn": (0.7172, 1.2869), "pinn": (0.6735, 1.2947)}
 
 # GPUs the models were trained on (full GPUs; MIG cells down to 16 SMs were also in training).
 TRAINED = ["a100", "h100", "h200", "gh200", "gb200", "l40s", "b300"]

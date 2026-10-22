@@ -8,14 +8,14 @@ profile, only its specs.
 |---|---|---|
 | LightGBM v1.0, v1.1 | `LightGBM_model/` | see its README |
 | MLP-NN v4.55 | `MLP_NN/` | current (2026-10-21) |
-| PINN v3.25 (physics-informed) | `PINN/` | current (2026-10-21) |
+| PINN v3.26 (physics-informed) | `PINN/` | current (2026-10-22) |
 
 Each model folder has a README with usage, inputs, outputs and accuracy.
 
 ## Which model to use
 
 Both current models take the same inputs and give the same outputs. MLP-NN v4.55 is slightly more accurate on held-out
-GPUs (mean kernel-level error 20.9% vs 21.9%; application level about 20% vs 21%). PINN v3.25 is trained against
+GPUs (mean kernel-level error 20.9% vs 22.5%; application level about 20% vs 21%). PINN v3.26 is trained against
 physics laws (roofline floor, monotonicity, scaling law). Running both and comparing is a cheap check.
 
 ## Examples
@@ -45,7 +45,7 @@ Your own kernels: build the input CSV from ncu profiles with `examples/kernel_in
 |---|---|
 | `LightGBM_model/` | LightGBM models (v1.0, v1.1) |
 | `MLP_NN/`, `PINN/` | current models: entry point (`MLP_NN/mlp-nn.py`, `PINN/pinn.py`), inference code, README |
-| `MLP_NN/v4.55/`, `PINN/v3.25/` | weights of the current versions, with the runtime inputs used in training |
+| `MLP_NN/v4.55/`, `PINN/v3.26/` | weights of the current versions, with the runtime inputs used in training |
 | `examples/` | `kernel_inputs/` (example kernel input, and `prepare_data.py` to build one from your ncu profiles), `app_inputs/` (example application run) and `predict_app.py` (one application run on one GPU); see `examples/README.md` |
 | `data/` | GPU spec sheets (latest: `data/v4/gpu_microarch_specs.csv`), hypothetical GPUs and older data; see `data/README.md` |
 | `MLP_NN/obsolete/`, `PINN/obsolete/` | earlier versions |

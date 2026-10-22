@@ -1,4 +1,4 @@
-"""Self-contained inference core for PINN v3.25 -- no-ET cross-GPU estimator + confidence.
+"""Self-contained inference core for PINN v3.26 -- no-ET cross-GPU estimator + confidence.
 
 v40 (formerly v6b) predicts a kernel's target-GPU ExecTime, Memory Throughput %,
 Achieved Occupancy and stall breakdown WITHOUT using the source Execution Time as an
@@ -6,7 +6,7 @@ input (Kondo constraint). It reconstructs absolute performance from the other co
 via a residual-against-roofline target, source-roofline + log-rate features, and
 calibrated-scaling distillation baked into training (so the NN itself extrapolates).
 
-Artifact (PINN/v3.25/): model_seed{0..N}.pt + meta.pkl.
+Artifact (PINN/v3.26/): model_seed{0..N}.pt + meta.pkl.
 predict() runs the seed ensemble and recovers physical outputs. No ExecTime input,
 no runtime formula -- a pure NN at inference.
 """
@@ -39,7 +39,7 @@ IB = ["kernel_config", "workload", "source_specs", "target_specs", "derived"]
 # every fold). Gated so the effect on interpolation vs extrapolation can be MEASURED.
 KEEP = [0, 1, 2, 3, 4] + ([7] if os.environ.get("ET_INPUT", "0") == "1" else []); MEMBPS_COL = 6
 ET, MEMPCT, OCC = 0, 1, 2
-ART = os.path.join(os.path.dirname(__file__), "v3.25")
+ART = os.path.join(os.path.dirname(__file__), "v3.26")
 
 
 def load(artdir=ART):
@@ -296,34 +296,34 @@ def predict_seeds(models, meta, samples, _no_transport=False):
 # v3 confidence estimation                                                   #
 # --------------------------------------------------------------------------- #
 # Two independent, ground-truth-FREE signals:
-#   (a) ENSEMBLE VARIANCE  - how much the 3 seeds disagree (epistemic uncertainty)
+#   (a) ENSEMBLE VARIANCE  - how much the 5 seeds disagree (epistemic uncertainty)
 #   (b) ROOFLINE CONSISTENCY - does the answer obey physics, and how far does it sit
 #       from the roofline floor the model is anchored to
 #
 # Calibration: see CONF_CAL2 below (two signals, held-out).
 
 
-# Two-signal confidence (2026-10-21), calibrated on the same held-out folds: exp_err from the TARGET's distance from the
+# Two-signal confidence (2026-10-21; refitted 2026-10-22 for the 5-seed v3.26), calibrated on the same held-out folds: exp_err from the TARGET's distance from the
 # trained GPUs x the ensemble spread; conf_<output> from exp_err (cut = high/medium, medium/low boundaries).
 CONF_D_NEAR, CONF_D_FAR = 0.3, 1.0   # gpu_distance bins: near < 0.3 <= mid < 1.0 <= far
 # held-out GPUs: h200 0.169, h100 0.025, a100 0.605, gh200 0.019, l40s 2.289, gb200 0.488, b300 2.289
 CONF_CAL2 = {   # per output: per bin (q60, q80 of the ensemble signal; mean error high / medium / low level), far = one value
     "ExecTime": dict(sig="ens_cv_et", cut=(16.0, 25.0),
-                near=dict(q60=0.04878, q80=0.07163, exp=(12.95, 15.14, 21.72)),
-                mid=dict(q60=0.0489, q80=0.07872, exp=(20.51, 30.18, 37.36)),
-                far=28.62),
+                near=dict(q60=0.05694, q80=0.0787, exp=(12.63, 15.83, 21.52)),
+                mid=dict(q60=0.05651, q80=0.08149, exp=(19.02, 28.29, 43.64)),
+                far=30.56),
     "Mem%": dict(sig="ens_sd_mem", cut=(6.0, 12.0),
-                near=dict(q60=2.19567, q80=3.05256, exp=(4.69, 5.77, 8.29)),
-                mid=dict(q60=2.5048, q80=3.85902, exp=(8.69, 10.82, 12.7)),
-                far=36.71),
+                near=dict(q60=2.57679, q80=3.37447, exp=(4.73, 5.79, 8.43)),
+                mid=dict(q60=2.92584, q80=4.24874, exp=(7.97, 11.95, 12.41)),
+                far=36.05),
     "Occupancy": dict(sig="ens_sd_occ", cut=(3.0, 6.0),
-                near=dict(q60=1.83563, q80=2.59332, exp=(2.43, 2.66, 6.28)),
-                mid=dict(q60=2.23821, q80=3.24805, exp=(4.91, 3.92, 7.76)),
-                far=39.66),
+                near=dict(q60=2.10181, q80=2.66817, exp=(2.18, 2.61, 6.28)),
+                mid=dict(q60=2.4061, q80=3.42854, exp=(4.63, 3.49, 8.02)),
+                far=42.82),
     "breakdown": dict(sig="ens_sd_brk", cut=(2.0, 5.0),
-                near=dict(q60=0.69117, q80=1.24185, exp=(1.1, 2.25, 4.08)),
-                mid=dict(q60=0.83998, q80=1.30465, exp=(1.52, 3.81, 6.15)),
-                far=11.98),
+                near=dict(q60=0.85176, q80=1.48159, exp=(1.06, 2.44, 4.13)),
+                mid=dict(q60=0.95897, q80=1.4783, exp=(1.41, 4.13, 5.88)),
+                far=14.64),
 }
 
 
@@ -459,7 +459,7 @@ CONF_LEGEND = [
     "Two independent signals per prediction:",
     "",
     "  A) ENSEMBLE VARIANCE -- the model's own uncertainty.",
-    "     The 3 seeds each predict independently; their spread is the model's own",
+    "     The 5 seeds each predict independently; their spread is the model's own",
     "     uncertainty. Wide spread = the model does not agree with itself.",
     "       ens_cv_et    relative spread of the 5 ExecTime predictions (std/mean)",
     "       ens_sd_mem   spread of Memory Throughput [%]      (pp)",

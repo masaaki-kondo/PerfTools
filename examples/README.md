@@ -70,7 +70,7 @@ python examples/predict_app.py --ncu examples/app_inputs/ncu/attention-cuda__894
 | `--ncu`, `--nsys` | the run's ncu profile and nsys kernel-time file on the base GPU |
 | `--base` | the GPU the run was profiled on |
 | `--specs`, `--gpu` | spec sheet and the target column in it |
-| `--model` | `mlpnn` (MLP-NN v4.55, default) or `pinn` (PINN v3.25) |
+| `--model` | `mlpnn` (MLP-NN v4.55, default) or `pinn` (PINN v3.26) |
 | `--target-nsys` | optional: nsys file of the same run measured on the target, to report the actual error |
 | `--out` | CSV the result row is appended to (one row per call) |
 

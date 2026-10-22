@@ -1,19 +1,19 @@
-"""PINN v3.25 -- cross-GPU kernel performance estimator. Self-contained.
+"""PINN v3.26 -- cross-GPU kernel performance estimator. Self-contained.
 
 Predicts, for CUDA kernels profiled with ncu on a SOURCE GPU, the execution time, memory throughput, occupancy and
 stall breakdown on a TARGET GPU (a real GPU, or a hypothetical one described by its specs). See README.md.
 
-Lineage: PINN v3.25 = the v3.22 inference code with the weights of the v3.25 production run (3 seeds).
+Lineage: PINN v3.26 = the v3.22 inference code with the weights of the v3.26 production run (5 seeds; seeds 0-2 are those of v3.25).
 
 INPUT   --csv FILE --row {N|all}: one row per kernel (ncu metrics + SRC/TGT spec columns), built with
         examples/kernel_inputs/prepare_data.py; or every column as a CLI option (one prediction).
         Specs come from data/v4/gpu_microarch_specs.csv; actual values (operating clocks, DRAM latency, ...) from
-        runtime_inputs_training.csv in the weights folder (v3.25/), plus any --runtime-inputs FILE.
+        runtime_inputs_training.csv in the weights folder (v3.26/), plus any --runtime-inputs FILE.
 OUTPUT  --out pred.csv: predicted metrics (+ roofline quantities) per kernel. --confidence adds confidence levels.
 
     python PINN/pinn.py --csv examples/kernel_inputs/kernel_inputs.csv --row all --out pred.csv
 """
-# RELEASE: default weights = v3.25/ in this folder (the v3.25 production run, 3 seeds). In-range routing is OFF.
+# RELEASE: default weights = v3.26/ in this folder (the v3.26 production run, 5 seeds). In-range routing is OFF.
 import os, sys, csv, re, pickle, argparse, datetime
 # v3.1 adds Metro's L1/L2 cache HIT RATES to the workload features. The flag must be
 # set BEFORE network is imported, because the feature list is built at import time.
@@ -51,15 +51,15 @@ HERE = os.path.dirname(os.path.abspath(__file__))
 sys.path.insert(0, HERE)   # own network.py and data_pipeline_v2.py copies
 # Spec sheet (specs only) + runtime inputs (actual values: training defaults, then the user's --runtime-inputs files).
 os.environ.setdefault("GPU_SPEC_SHEET", os.path.join(HERE, "..", "data", "v4", "gpu_microarch_specs.csv"))
-# The weights folder (--artifact, default v3.25/) carries the runtime inputs its training used.
-_art = os.path.join(HERE, "v3.25")
+# The weights folder (--artifact, default v3.26/) carries the runtime inputs its training used.
+_art = os.path.join(HERE, "v3.26")
 for _i, _a in enumerate(sys.argv):
     if _a == "--artifact" and _i + 1 < len(sys.argv):
         _art = os.path.abspath(sys.argv[_i + 1])
     elif _a.startswith("--artifact="):
         _art = os.path.abspath(_a.split("=", 1)[1])
 if not os.path.exists(os.path.join(_art, "runtime_inputs_training.csv")):   # e.g. a held-out fold: same training GPUs
-    _art = os.path.join(HERE, "v3.25")
+    _art = os.path.join(HERE, "v3.26")
 _ri = [os.path.join(_art, "runtime_inputs_training.csv")]
 for _i, _a in enumerate(sys.argv):
     if _a == "--runtime-inputs" and _i + 1 < len(sys.argv):
@@ -310,12 +310,12 @@ def to_rows(P, samples):
 
 
 PROVENANCE = [
-    "# PINN v3.25 cross-GPU kernel estimator (no-ET NN + confidence) -- output",
+    "# PINN v3.26 cross-GPU kernel estimator (no-ET NN + confidence) -- output",
     "# INPUT SOURCES: kernel stats = NCU on the SOURCE GPU; GPU specs = spec sheet (SRC/TGT cols);",
     "#   roofline terms COMPUTED in-tool (bytes=MemThr[byte/s]*ExecTime; flops=(2*FFMA+FADD+FMUL)*cycles).",
-    "# MODEL: PINN v3.25 -- Execution Time is NOT a predictive input; inference is a plain NN forward pass.",
-    "# CONFIDENCE (--confidence): conf_* from 3-seed ensemble spread + roofline consistency; exp_err_* = measured typical error for that bucket.",
-    "# OUTPUTS: ExecTime/Mem%/Occupancy/brk_* = PINN v3.25 predictions; t_*_ns + efficiency_eta = roofline.",
+    "# MODEL: PINN v3.26 -- Execution Time is NOT a predictive input; inference is a plain NN forward pass.",
+    "# CONFIDENCE (--confidence): conf_* from 5-seed ensemble spread + roofline consistency; exp_err_* = measured typical error for that bucket.",
+    "# OUTPUTS: ExecTime/Mem%/Occupancy/brk_* = PINN v3.26 predictions; t_*_ns + efficiency_eta = roofline.",
     "# running_cycles: warp-cycles in ncu's Selected (issuing) state = issued warp instructions of the SOURCE run (1 cycle each);",
     "#   exact for a target with the same SM architecture, NaN when the input has no 'Issued Instructions [inst]'.",
     "# issue_limited: 1 = predicted time raised to the instruction-issue limit, issued / (4 x SMs x clock); Mem% scaled to match.",
@@ -353,13 +353,13 @@ def _is_trained(tgt):
 def route_predict(models, meta, samples, args):
     n = len(samples)
     inr = None; ia = args.inrange_artifact
-    if ia is None and os.path.realpath(args.artifact) == os.path.realpath(os.path.join(HERE, "v3.25")):
+    if ia is None and os.path.realpath(args.artifact) == os.path.realpath(os.path.join(HERE, "v3.26")):
         ia = None   # release 2026-10-16: in-range routing OFF until a v3.21 in-range model is tested (pass --inrange-artifact to opt in)
     if not args.no_route and ia and os.path.exists(os.path.join(ia, "meta.pkl")):
         inr = pinn_core.load(ia)
     known = np.array([inr is not None and _is_trained(s["tgt_gpu"]) for s in samples], dtype=bool)
     if not known.any():
-        return pinn_core.predict_seeds(models, meta, samples), ["PINN v3.25"] * n
+        return pinn_core.predict_seeds(models, meta, samples), ["PINN v3.26"] * n
     parts = {}
     saved = {k: os.environ.pop(k, None) for k in ("TRUST_Z", "TRUST_MODE")}   # in-range: no cap
     try:
@@ -383,16 +383,16 @@ def route_predict(models, meta, samples, args):
         else:
             raise KeyError(f"router: unknown predict_seeds output {key!r}")
         R[key] = out
-    return R, ["PINN v3.25-inrange" if k else "PINN v3.25" for k in known]
+    return R, ["PINN v3.26-inrange" if k else "PINN v3.26" for k in known]
 
 
 def main():
     ap = argparse.ArgumentParser(
-        description="PINN v3.25 cross-GPU kernel estimator (no-ET NN + confidence). Two input modes: "
+        description="PINN v3.26 cross-GPU kernel estimator (no-ET NN + confidence). Two input modes: "
                     "(1) full input via CLI options, or (2) --csv FILE [--row N].")
     ap.add_argument("--runtime-inputs", metavar="CSV", action="append",
                     help="your actual GPU values (spec,unit,<GPU columns>) applied on top of runtime_inputs_training.csv; repeatable")
-    ap.add_argument("--artifact", default=os.path.join(HERE, "v3.25"))   # PINN v3.25: the v3.22 inference code with the weights of the v3.25 production run (3 seeds)
+    ap.add_argument("--artifact", default=os.path.join(HERE, "v3.26"))   # PINN v3.26: the v3.22 inference code with the weights of the v3.26 production run (5 seeds; seeds 0-2 are those of v3.25)
     ap.add_argument("--inrange-artifact", default=None,
                     help="optional in-range model for TARGET GPUs in the training set; not shipped. Default: none "
                          "(routing off). A LOGO fold artifact is never routed (the in-range model has seen the "

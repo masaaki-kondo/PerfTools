@@ -1,14 +1,15 @@
-# PINN v3.25: physics-informed cross-GPU kernel performance estimator (release 2026-10-21)
+# PINN v3.26: physics-informed cross-GPU kernel performance estimator (release 2026-10-22)
 
 Same task, inputs and outputs as MLP-NN v4.55 (`MLP_NN/README.md`): one CUDA kernel profiled with ncu on a
 source GPU, predicted on a real or hypothetical target GPU. The difference is training: the network is also trained
 against three physics laws.
 
-PINN v3.25 is the v3.22 inference code with new weights (`v3.25/`, 3 seeds), trained on Yoshida-san's HeCBench
+PINN v3.26 is the v3.22 inference code with new weights (`v3.26/`, 5 seeds, all kept), trained on Yoshida-san's HeCBench
 profiles including the 2026-10-17 sweep (A100, H100, H200, GH200 96 GB, GB200, L40S, H100 MIG 1g/2g/4g; B300 as an
-nsys-only target). The previous release (2026-10-16, published as `PINN/v1.0`) is now `PINN/obsolete/v3.22/` (weights only),
-named after its internal version; run it with `python PINN/pinn.py --artifact PINN/obsolete/v3.22 ...` (current
-inference code, so outputs differ slightly from the 2026-10-16 release).
+nsys-only target). Earlier releases are in `PINN/obsolete/` (weights only): `v3.25/` (2026-10-21; the first 3 of the
+5 seeds) and `v3.22/` (2026-10-16, published as `PINN/v1.0`). Run one with `python PINN/pinn.py --artifact
+PINN/obsolete/v3.22 ...` (current inference code and confidence calibration, so outputs differ slightly from the original
+releases).
 
 ## Quick start
 
@@ -18,13 +19,13 @@ python PINN/pinn.py --csv inputs.csv --row all --out predictions.csv
 ```
 
 Options as in MLP-NN v4.55 (`--row`, `--confidence`, `--artifact`, `--runtime-inputs`; `PRED_SEED_TIMES=1` adds
-`et_seed0` ... `et_seed2`). The separate in-range model is not shipped; routing to it is off.
+`et_seed0` ... `et_seed4`). The separate in-range model is not shipped; routing to it is off.
 
 ## Inputs, spec sheet and runtime inputs
 
 As in MLP-NN v4.55: one row per kernel built with `examples/kernel_inputs/prepare_data.py`; specs from
 `data/v4/gpu_microarch_specs.csv` (datasheet values only); the actual values the model was trained with in
-`v3.25/runtime_inputs_training.csv` (in the weights folder); your own on top with `--runtime-inputs FILE`. `src_gpu` must be a GPU with
+`v3.26/runtime_inputs_training.csv` (in the weights folder); your own on top with `--runtime-inputs FILE`. `src_gpu` must be a GPU with
 ncu profiles; B300 and GH200_144GB are targets only.
 
 ## Outputs
@@ -67,10 +68,10 @@ with a measured target profile for the other outputs. Mean error, levels high / 
 
 | Output | near | mid | far | unit |
 |---|---|---|---|---|
-| ExecTime | 12.9 / 15.1 / 21.7 | 20.5 / 30.2 / 37.4 | 28.6 | % (absolute percentage error) |
-| Mem% | 4.7 / 5.8 / 8.3 | 8.7 / 10.8 / 12.7 | 36.7 | percentage points |
-| Occupancy | 2.4 / 2.7 / 6.3 | 4.9 / 3.9 / 7.8 | 39.7 | percentage points |
-| breakdown | 1.1 / 2.2 / 4.1 | 1.5 / 3.8 / 6.2 | 12.0 | percentage points (mean over the 4 shares) |
+| ExecTime | 12.6 / 15.8 / 21.5 | 19.0 / 28.3 / 43.6 | 30.6 | % (absolute percentage error) |
+| Mem% | 4.7 / 5.8 / 8.4 | 8.0 / 12.0 / 12.4 | 36.1 | percentage points |
+| Occupancy | 2.2 / 2.6 / 6.3 | 4.6 / 3.5 / 8.0 | 42.8 | percentage points |
+| breakdown | 1.1 / 2.4 / 4.1 | 1.4 / 4.1 / 5.9 | 14.6 | percentage points (mean over the 4 shares) |
 
 The distance carries most of the information: the mean error grows from near to mid to far for every output. Within
 near and mid the ensemble spread separates the least reliable kernels (low level; mid low can exceed far), though not
@@ -101,11 +102,17 @@ in training. Inputs use the representative GPU features and the instruction-issu
 
 | | In-sample | H200 | H100 | A100 | GH200 | L40S | GB200 | B300 | Held-out mean |
 |---|---|---|---|---|---|---|---|---|---|
-| PINN v3.25 | 14.7 | 12.2 | 14.2 | 22.1 | 18.5 | 31.3 | 29.0 | 26.1 | 21.92 |
+| PINN v3.26 | 14.5 | 12.2 | 14.6 | 22.3 | 18.1 | 36.2 | 28.8 | 25.3 | 22.50 |
 
-Application level (sum of kernel time x launches), held out: about 21%.
+Every fold uses all 5 seeds; no seed is selected on held-out results. Application level (sum of kernel time x launches),
+held out: about 21%.
 
-## What is new (vs the 2026-10-16 release)
+## What is new
+
+vs v3.25 (2026-10-21): 5 seeds instead of 3 (the same 3 plus 2 new ones, same recipe); confidence calibration (expected
+errors and spread quantiles) and the application range refitted to the 5-seed spread.
+
+vs the 2026-10-16 release:
 
 - Newest training data, including the 2026-10-17 sweep.
 - Clock-aware latency floor; the setting is stored in the weights' metadata.
@@ -126,5 +133,5 @@ As in MLP-NN v4.55 (L40S is the hardest GPU; the representative spec features de
 |---|---|
 | `pinn.py` | entry point (command line) |
 | `pinn_core.py`, `network.py`, `data_pipeline_v2.py` | inference code |
-| `v3.25/` | weights (3 seeds, `meta.pkl`, `trust_anchor.json`) and `runtime_inputs_training.csv` (actual GPU values used in training) |
+| `v3.26/` | weights (5 seeds, `meta.pkl`, `trust_anchor.json`) and `runtime_inputs_training.csv` (actual GPU values used in training) |
 | `obsolete/<version>/` | earlier versions |
